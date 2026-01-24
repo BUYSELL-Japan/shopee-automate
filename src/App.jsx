@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
 import ProductList from './pages/ProductList'
 import ProductDetail from './pages/ProductDetail'
+import ProductEdit from './pages/ProductEdit'
 import NewProduct from './pages/NewProduct'
 import BulkUpload from './pages/BulkUpload'
 import Orders from './pages/Orders'
@@ -17,6 +18,7 @@ function App() {
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/products" element={<ProductList />} />
                     <Route path="/products/:id" element={<ProductDetail />} />
+                    <Route path="/products/edit/:id" element={<ProductEdit />} />
                     <Route path="/products/new" element={<NewProduct />} />
                     <Route path="/bulk-upload" element={<BulkUpload />} />
                     <Route path="/orders" element={<Orders />} />
@@ -28,4 +30,5 @@ function App() {
 }
 
 export default App
+
 

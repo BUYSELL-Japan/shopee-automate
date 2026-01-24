@@ -478,15 +478,13 @@ function ProductCard({ product, dataSource }) {
                     >
                         詳細
                     </Link>
-                    {dataSource === 'd1' && (
-                        <Link
-                            to={`/products/edit/${product.id}`}
-                            className="btn btn-primary btn-sm"
-                            style={{ flex: 1 }}
-                        >
-                            編集
-                        </Link>
-                    )}
+                    <Link
+                        to={`/products/edit/${product.id}`}
+                        className="btn btn-primary btn-sm"
+                        style={{ flex: 1 }}
+                    >
+                        編集
+                    </Link>
                 </div>
             </div>
         </div>
