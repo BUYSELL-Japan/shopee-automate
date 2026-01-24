@@ -49,8 +49,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             throw new Error("環境変数が設定されていません");
         }
 
-        // 過去30日間の注文を取得
-        const timeFrom = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
+        // 過去15日間の注文を取得（Shopee APIは最大15日間の制限）
+        const timeFrom = Math.floor(Date.now() / 1000) - (15 * 24 * 60 * 60);
         const timeTo = Math.floor(Date.now() / 1000);
 
         // 注文一覧を取得
