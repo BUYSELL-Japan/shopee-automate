@@ -1,16 +1,17 @@
 /**
- * Shopee API Callback Handler
+ * Shopee API Callback Handler (D1永続化対応版)
  * 
  * このエンドポイントは以下の目的で使用されます：
  * 1. Shopeeサーバーからの疎通確認（Verification）
  * 2. OAuth認可コードの受け取り → Access Token取得
- * 3. プッシュ通知の受信
+ * 3. トークンをD1データベースに永続保存
+ * 4. プッシュ通知の受信
  */
 
 interface Env {
     SHOPEE_PARTNER_ID: string;
     SHOPEE_PARTNER_KEY: string;
-    SHOPEE_TOKENS?: KVNamespace;
+    DB: D1Database;
 }
 
 const SHOPEE_HOST = "https://partner.shopeemobile.com";
@@ -52,8 +53,29 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
             console.log("Token Result:", JSON.stringify(tokenResult, null, 2));
 
-            // 成功ページを返す
-            return new Response(generateSuccessHtml(tokenResult, shopId), {
+            // トークン取得成功時、D1に保存
+            let d1Saved = false;
+            let d1Error = null;
+
+            if (!tokenResult.error && tokenResult.access_token) {
+                try {
+                    await saveTokenToD1(env.DB, {
+                        shop_id: parseInt(shopId),
+                        access_token: tokenResult.access_token,
+                        refresh_token: tokenResult.refresh_token,
+                        expire_in: tokenResult.expire_in,
+                        shop_name: null
+                    });
+                    d1Saved = true;
+                    console.log("Token saved to D1 successfully");
+                } catch (e) {
+                    d1Error = String(e);
+                    console.error("D1 save error:", e);
+                }
+            }
+
+            // 成功ページを返す（D1保存状態も表示）
+            return new Response(generateSuccessHtml(tokenResult, shopId, d1Saved, d1Error), {
                 status: 200,
                 headers: {
                     "Content-Type": "text/html; charset=utf-8",
@@ -106,6 +128,39 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         },
     });
 };
+
+/**
+ * トークンをD1に保存
+ */
+async function saveTokenToD1(db: D1Database, data: {
+    shop_id: number;
+    access_token: string;
+    refresh_token: string;
+    expire_in: number;
+    shop_name: string | null;
+}): Promise<void> {
+    // 有効期限を計算（秒単位で返ってくる）
+    const accessExpires = new Date(Date.now() + (data.expire_in * 1000)).toISOString();
+    const refreshExpires = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString(); // 30日
+
+    await db.prepare(`
+        INSERT INTO tokens (shop_id, access_token, refresh_token, access_token_expires_at, refresh_token_expires_at, shop_name, region)
+        VALUES (?, ?, ?, ?, ?, ?, 'TW')
+        ON CONFLICT(shop_id) DO UPDATE SET
+            access_token = excluded.access_token,
+            refresh_token = excluded.refresh_token,
+            access_token_expires_at = excluded.access_token_expires_at,
+            refresh_token_expires_at = excluded.refresh_token_expires_at,
+            updated_at = datetime('now')
+    `).bind(
+        data.shop_id,
+        data.access_token,
+        data.refresh_token,
+        accessExpires,
+        refreshExpires,
+        data.shop_name
+    ).run();
+}
 
 /**
  * 認可コードからAccess Tokenを取得
@@ -163,9 +218,9 @@ async function hmacSha256(key: string, message: string): Promise<string> {
 }
 
 /**
- * 成功時のHTMLを生成
+ * 成功時のHTMLを生成（D1保存状態も表示）
  */
-function generateSuccessHtml(tokenResult: any, shopId: string): string {
+function generateSuccessHtml(tokenResult: any, shopId: string, d1Saved: boolean, d1Error: string | null): string {
     const isSuccess = !tokenResult.error;
 
     return `<!DOCTYPE html>
@@ -200,6 +255,25 @@ function generateSuccessHtml(tokenResult: any, shopId: string): string {
         .label { color: #888; font-size: 12px; }
         .value { font-family: monospace; word-break: break-all; }
         pre { text-align: left; overflow: auto; background: #000; padding: 10px; border-radius: 8px; font-size: 12px; }
+        .d1-status { 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin: 20px 0;
+            text-align: center;
+        }
+        .d1-success { background: rgba(34, 197, 94, 0.2); border: 1px solid #22c55e; }
+        .d1-error { background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #6366f1;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-weight: 600;
+        }
+        .btn:hover { background: #4f46e5; }
     </style>
 </head>
 <body>
@@ -219,12 +293,43 @@ function generateSuccessHtml(tokenResult: any, shopId: string): string {
             <div class="label">Refresh Token</div>
             <div class="value">${tokenResult.refresh_token || 'N/A'}</div>
         </div>
+        <div class="info">
+            <div class="label">有効期限</div>
+            <div class="value">${tokenResult.expire_in ? Math.floor(tokenResult.expire_in / 3600) + '時間' : 'N/A'}</div>
+        </div>
+        
+        <!-- D1保存状態 -->
+        <div class="d1-status ${d1Saved ? 'd1-success' : 'd1-error'}">
+            ${d1Saved
+                ? '💾 トークンはD1データベースに永続保存されました！'
+                : `⚠️ D1保存エラー: ${d1Error || 'データベースに接続できませんでした。スキーマが適用されているか確認してください。'}`
+            }
+        </div>
         ` : ''}
         <details>
             <summary>詳細レスポンス</summary>
             <pre>${JSON.stringify(tokenResult, null, 2)}</pre>
         </details>
+        <a href="/" class="btn">🏠 ダッシュボードへ</a>
     </div>
+    
+    ${isSuccess ? `
+    <script>
+        // localStorageにも保存（バックアップ）
+        try {
+            localStorage.setItem('shopee_auth', JSON.stringify({
+                shopId: '${shopId}',
+                accessToken: '${tokenResult.access_token || ''}',
+                refreshToken: '${tokenResult.refresh_token || ''}',
+                shopName: null,
+                connectedAt: new Date().toISOString()
+            }));
+            console.log('Saved to localStorage as backup');
+        } catch(e) {
+            console.error('localStorage save error:', e);
+        }
+    </script>
+    ` : ''}
 </body>
 </html>`;
 }
