@@ -1,21 +1,125 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { mockStats, mockProducts, mockOrders, formatPrice, getStatusBadge } from '../data/mockData'
+import { useShopeeAuth } from '../hooks/useShopeeAuth'
+import { getProducts, getOrders, formatPrice, getStatusBadge } from '../services/shopeeApi'
 
 function Dashboard() {
-    const recentProducts = mockProducts.slice(0, 4)
-    const recentOrders = mockOrders.slice(0, 5)
+    const [stats, setStats] = useState({
+        totalProducts: 0,
+        activeListings: 0,
+        pendingOrders: 0,
+        totalSales: 0
+    })
+    const [products, setProducts] = useState([])
+    const [orders, setOrders] = useState([])
+    const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState(null)
+
+    const { accessToken, shopId, shopName, isConnected } = useShopeeAuth()
+
+    // データを取得
+    const fetchData = async () => {
+        if (!isConnected || !accessToken || !shopId) return
+
+        setIsLoading(true)
+        setError(null)
+
+        try {
+            // 商品と注文を並行取得
+            const [productsResult, ordersResult] = await Promise.all([
+                getProducts(accessToken, shopId, { pageSize: 50 }),
+                getOrders(accessToken, shopId, { orderStatus: 'ALL', pageSize: 50 })
+            ])
+
+            if (productsResult.status === 'success') {
+                const productList = productsResult.data.products || []
+                setProducts(productList.slice(0, 4))
+                setStats(prev => ({
+                    ...prev,
+                    totalProducts: productsResult.data.total || productList.length,
+                    activeListings: productList.filter(p => p.status === 'active').length
+                }))
+            }
+
+            if (ordersResult.status === 'success') {
+                const orderList = ordersResult.data.orders || []
+                setOrders(orderList.slice(0, 5))
+                setStats(prev => ({
+                    ...prev,
+                    pendingOrders: orderList.filter(o => o.status === 'pending' || o.status === 'processing').length,
+                    totalSales: orderList.reduce((sum, o) => sum + (o.total || 0), 0)
+                }))
+            }
+
+        } catch (e) {
+            setError(e.message || 'データの取得に失敗しました')
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        if (isConnected) {
+            fetchData()
+        }
+    }, [isConnected, accessToken, shopId])
+
+    // 未接続時のUI
+    if (!isConnected) {
+        return (
+            <div className="page-container animate-fade-in">
+                <header className="page-header">
+                    <div>
+                        <h1 className="page-title">ダッシュボード</h1>
+                        <p className="page-subtitle">Shopee APIに接続してください</p>
+                    </div>
+                </header>
+                <div className="card">
+                    <div className="empty-state">
+                        <div className="empty-icon">🔗</div>
+                        <div className="empty-title">API未接続</div>
+                        <p>ダッシュボードを表示するには、まず設定ページでShopee APIに接続してください。</p>
+                        <Link to="/settings" className="btn btn-primary" style={{ marginTop: 'var(--spacing-lg)' }}>
+                            ⚙️ 設定へ移動
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="page-container animate-fade-in">
             <header className="page-header">
                 <div>
                     <h1 className="page-title">ダッシュボード</h1>
-                    <p className="page-subtitle">ストアの概要を確認できます</p>
+                    <p className="page-subtitle">
+                        {shopName ? `${shopName} の概要` : 'ストアの概要を確認できます'}
+                    </p>
                 </div>
-                <Link to="/products/new" className="btn btn-primary">
-                    ➕ 新規出品
-                </Link>
+                <div style={{ display: 'flex', gap: 'var(--spacing-md)' }}>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={fetchData}
+                        disabled={isLoading}
+                    >
+                        🔄 更新
+                    </button>
+                    <Link to="/products/new" className="btn btn-primary">
+                        ➕ 新規出品
+                    </Link>
+                </div>
             </header>
+
+            {/* Error Message */}
+            {error && (
+                <div className="card" style={{
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    marginBottom: 'var(--spacing-xl)'
+                }}>
+                    <p style={{ color: 'var(--color-error)', margin: 0 }}>❌ {error}</p>
+                </div>
+            )}
 
             {/* Stats Cards */}
             <div className="stats-grid">
@@ -23,8 +127,9 @@ function Dashboard() {
                     <div className="stat-icon orange">📦</div>
                     <div className="stat-content">
                         <div className="stat-label">総商品数</div>
-                        <div className="stat-value">{mockStats.totalProducts}</div>
-                        <div className="stat-change positive">↑ 12% 先月比</div>
+                        <div className="stat-value">
+                            {isLoading ? '...' : stats.totalProducts}
+                        </div>
                     </div>
                 </div>
 
@@ -32,8 +137,9 @@ function Dashboard() {
                     <div className="stat-icon green">✅</div>
                     <div className="stat-content">
                         <div className="stat-label">出品中</div>
-                        <div className="stat-value">{mockStats.activeListings}</div>
-                        <div className="stat-change positive">↑ 8% 先月比</div>
+                        <div className="stat-value">
+                            {isLoading ? '...' : stats.activeListings}
+                        </div>
                     </div>
                 </div>
 
@@ -41,17 +147,19 @@ function Dashboard() {
                     <div className="stat-icon yellow">⏳</div>
                     <div className="stat-content">
                         <div className="stat-label">保留中の注文</div>
-                        <div className="stat-value">{mockStats.pendingOrders}</div>
-                        <div className="stat-change negative">↓ 5% 先月比</div>
+                        <div className="stat-value">
+                            {isLoading ? '...' : stats.pendingOrders}
+                        </div>
                     </div>
                 </div>
 
                 <div className="stat-card">
                     <div className="stat-icon blue">💰</div>
                     <div className="stat-content">
-                        <div className="stat-label">総売上</div>
-                        <div className="stat-value">{formatPrice(mockStats.totalSales)}</div>
-                        <div className="stat-change positive">↑ 23% 先月比</div>
+                        <div className="stat-label">総売上（30日間）</div>
+                        <div className="stat-value">
+                            {isLoading ? '...' : formatPrice(stats.totalSales, 'TWD')}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -66,54 +174,72 @@ function Dashboard() {
                             すべて見る →
                         </Link>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-                        {recentProducts.map((product) => {
-                            const status = getStatusBadge(product.status)
-                            return (
-                                <div key={product.id} style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 'var(--spacing-md)',
-                                    padding: 'var(--spacing-md)',
-                                    background: 'var(--color-bg-glass)',
-                                    borderRadius: 'var(--radius-md)'
-                                }}>
-                                    <div style={{
-                                        width: '48px',
-                                        height: '48px',
-                                        background: 'var(--color-bg-tertiary)',
-                                        borderRadius: 'var(--radius-md)',
+                    {isLoading ? (
+                        <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center' }}>
+                            🔄 読み込み中...
+                        </div>
+                    ) : products.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+                            {products.map((product) => {
+                                const status = getStatusBadge(product.status)
+                                return (
+                                    <div key={product.id} style={{
                                         display: 'flex',
                                         alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontSize: '1.5rem'
+                                        gap: 'var(--spacing-md)',
+                                        padding: 'var(--spacing-md)',
+                                        background: 'var(--color-bg-glass)',
+                                        borderRadius: 'var(--radius-md)'
                                     }}>
-                                        📦
-                                    </div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{
-                                            fontWeight: 500,
-                                            marginBottom: '2px',
-                                            whiteSpace: 'nowrap',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis'
+                                            width: '48px',
+                                            height: '48px',
+                                            background: 'var(--color-bg-tertiary)',
+                                            borderRadius: 'var(--radius-md)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '1.5rem',
+                                            overflow: 'hidden'
                                         }}>
-                                            {product.name}
+                                            {product.image ? (
+                                                <img
+                                                    src={product.image}
+                                                    alt={product.name}
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                    onError={(e) => { e.target.style.display = 'none'; e.target.parentElement.textContent = '📦' }}
+                                                />
+                                            ) : '📦'}
                                         </div>
-                                        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                                            在庫: {product.stock}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{
+                                                fontWeight: 500,
+                                                marginBottom: '2px',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis'
+                                            }}>
+                                                {product.name}
+                                            </div>
+                                            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                                                在庫: {product.stock}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontWeight: 600, color: 'var(--color-accent-light)' }}>
+                                                {formatPrice(product.price, product.currency)}
+                                            </div>
+                                            <span className={`badge ${status.className}`}>{status.label}</span>
                                         </div>
                                     </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontWeight: 600, color: 'var(--color-accent-light)' }}>
-                                            {formatPrice(product.price)}
-                                        </div>
-                                        <span className={`badge ${status.className}`}>{status.label}</span>
-                                    </div>
-                                </div>
-                            )
-                        })}
-                    </div>
+                                )
+                            })}
+                        </div>
+                    ) : (
+                        <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                            商品がありません
+                        </div>
+                    )}
                 </div>
 
                 {/* Recent Orders */}
@@ -124,31 +250,41 @@ function Dashboard() {
                             すべて見る →
                         </Link>
                     </div>
-                    <div className="table-container" style={{ border: 'none' }}>
-                        <table className="table">
-                            <thead>
-                                <tr>
-                                    <th>注文ID</th>
-                                    <th>顧客</th>
-                                    <th>金額</th>
-                                    <th>状態</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {recentOrders.map((order) => {
-                                    const status = getStatusBadge(order.status)
-                                    return (
-                                        <tr key={order.id}>
-                                            <td style={{ fontWeight: 500 }}>{order.id}</td>
-                                            <td>{order.customer}</td>
-                                            <td>{formatPrice(order.total)}</td>
-                                            <td><span className={`badge ${status.className}`}>{status.label}</span></td>
-                                        </tr>
-                                    )
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                    {isLoading ? (
+                        <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center' }}>
+                            🔄 読み込み中...
+                        </div>
+                    ) : orders.length > 0 ? (
+                        <div className="table-container" style={{ border: 'none' }}>
+                            <table className="table">
+                                <thead>
+                                    <tr>
+                                        <th>注文ID</th>
+                                        <th>顧客</th>
+                                        <th>金額</th>
+                                        <th>状態</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {orders.map((order) => {
+                                        const status = getStatusBadge(order.status)
+                                        return (
+                                            <tr key={order.id}>
+                                                <td style={{ fontWeight: 500 }}>{order.id?.slice(-10) || order.id}</td>
+                                                <td>{order.customer}</td>
+                                                <td>{formatPrice(order.total, order.currency)}</td>
+                                                <td><span className={`badge ${status.className}`}>{status.label}</span></td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                            注文がありません
+                        </div>
+                    )}
                 </div>
             </div>
 

@@ -1,28 +1,60 @@
 import { useState } from 'react'
+import { useShopeeAuth } from '../hooks/useShopeeAuth'
+import { getAuthUrl } from '../services/shopeeApi'
 
 function Settings() {
     const [activeTab, setActiveTab] = useState('api')
-    const [apiSettings, setApiSettings] = useState({
-        partnerId: '',
-        partnerKey: '',
+    const [formData, setFormData] = useState({
         shopId: '',
-        accessToken: '',
-        isConnected: false
+        accessToken: ''
     })
+    const [testMessage, setTestMessage] = useState(null)
 
-    const handleApiChange = (e) => {
+    const {
+        shopId: savedShopId,
+        shopName,
+        isConnected,
+        isLoading,
+        error,
+        shopInfo,
+        testConnection,
+        disconnect
+    } = useShopeeAuth()
+
+    const handleInputChange = (e) => {
         const { name, value } = e.target
-        setApiSettings((prev) => ({ ...prev, [name]: value }))
+        setFormData((prev) => ({ ...prev, [name]: value }))
     }
 
-    const handleConnect = () => {
-        // TODO: API連携時に実装
-        setApiSettings((prev) => ({ ...prev, isConnected: true }))
-        alert('API接続が完了しました！（モックデータ）')
+    const handleTestConnection = async () => {
+        setTestMessage(null)
+        const result = await testConnection(formData.accessToken, formData.shopId)
+        if (result.success) {
+            setTestMessage({ type: 'success', text: `✅ 接続成功！ショップ名: ${result.shopInfo?.shop_name}` })
+        } else {
+            setTestMessage({ type: 'error', text: `❌ ${result.error}` })
+        }
+    }
+
+    const handleGetAuthUrl = async () => {
+        try {
+            const result = await getAuthUrl()
+            if (result.status === 'success') {
+                window.open(result.auth_url, '_blank')
+            } else {
+                alert('認可URL取得に失敗しました: ' + result.message)
+            }
+        } catch (e) {
+            alert('エラー: ' + e.message)
+        }
     }
 
     const handleDisconnect = () => {
-        setApiSettings((prev) => ({ ...prev, isConnected: false }))
+        if (confirm('本当に切断しますか？')) {
+            disconnect()
+            setTestMessage(null)
+            setFormData({ shopId: '', accessToken: '' })
+        }
     }
 
     return (
@@ -84,7 +116,7 @@ function Settings() {
                             {/* Connection Status */}
                             <div style={{
                                 padding: 'var(--spacing-lg)',
-                                background: apiSettings.isConnected
+                                background: isConnected
                                     ? 'rgba(34, 197, 94, 0.1)'
                                     : 'rgba(245, 158, 11, 0.1)',
                                 borderRadius: 'var(--radius-md)',
@@ -95,89 +127,119 @@ function Settings() {
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
                                     <span style={{ fontSize: '1.5rem' }}>
-                                        {apiSettings.isConnected ? '✅' : '⚠️'}
+                                        {isConnected ? '✅' : '⚠️'}
                                     </span>
                                     <div>
                                         <div style={{ fontWeight: 600 }}>
-                                            {apiSettings.isConnected ? '接続済み' : '未接続'}
+                                            {isConnected ? `接続済み: ${shopName || savedShopId}` : '未接続'}
                                         </div>
                                         <div style={{
                                             fontSize: 'var(--font-size-sm)',
                                             color: 'var(--color-text-secondary)'
                                         }}>
-                                            {apiSettings.isConnected
-                                                ? 'Shopee APIに正常に接続されています'
+                                            {isConnected
+                                                ? `Shop ID: ${savedShopId} | Region: ${shopInfo?.region || 'TW'}`
                                                 : 'API認証情報を入力して接続してください'}
                                         </div>
                                     </div>
                                 </div>
-                                {apiSettings.isConnected && (
+                                {isConnected && (
                                     <button className="btn btn-ghost btn-sm" onClick={handleDisconnect}>
                                         切断
                                     </button>
                                 )}
                             </div>
 
-                            <div className="form-group">
-                                <label className="form-label">Partner ID</label>
-                                <input
-                                    type="text"
-                                    name="partnerId"
-                                    className="form-input"
-                                    placeholder="あなたのPartner IDを入力"
-                                    value={apiSettings.partnerId}
-                                    onChange={handleApiChange}
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Partner Key</label>
-                                <input
-                                    type="password"
-                                    name="partnerKey"
-                                    className="form-input"
-                                    placeholder="••••••••••••••••"
-                                    value={apiSettings.partnerKey}
-                                    onChange={handleApiChange}
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Shop ID</label>
-                                <input
-                                    type="text"
-                                    name="shopId"
-                                    className="form-input"
-                                    placeholder="あなたのShop IDを入力"
-                                    value={apiSettings.shopId}
-                                    onChange={handleApiChange}
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Access Token（オプション）</label>
-                                <input
-                                    type="password"
-                                    name="accessToken"
-                                    className="form-input"
-                                    placeholder="••••••••••••••••"
-                                    value={apiSettings.accessToken}
-                                    onChange={handleApiChange}
-                                />
-                            </div>
-
+                            {/* OAuth Button */}
                             <div style={{
-                                display: 'flex',
-                                justifyContent: 'flex-end',
-                                gap: 'var(--spacing-md)',
-                                marginTop: 'var(--spacing-lg)'
+                                padding: 'var(--spacing-md)',
+                                background: 'var(--color-bg-glass)',
+                                borderRadius: 'var(--radius-md)',
+                                marginBottom: 'var(--spacing-xl)',
+                                textAlign: 'center'
                             }}>
-                                <button className="btn btn-secondary">
-                                    🧪 接続テスト
+                                <p style={{ marginBottom: 'var(--spacing-md)', color: 'var(--color-text-secondary)' }}>
+                                    新しいショップを認証する場合はこちら
+                                </p>
+                                <button className="btn btn-secondary" onClick={handleGetAuthUrl}>
+                                    🔗 Shopee OAuth認証を開始
                                 </button>
-                                <button className="btn btn-primary" onClick={handleConnect}>
-                                    💾 保存して接続
-                                </button>
+                            </div>
+
+                            {/* Manual Token Input */}
+                            <div style={{
+                                padding: 'var(--spacing-lg)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: 'var(--radius-md)',
+                                marginBottom: 'var(--spacing-lg)'
+                            }}>
+                                <h4 style={{ marginBottom: 'var(--spacing-md)' }}>手動でトークンを設定</h4>
+
+                                <div className="form-group">
+                                    <label className="form-label">Shop ID</label>
+                                    <input
+                                        type="text"
+                                        name="shopId"
+                                        className="form-input"
+                                        placeholder="例: 1648252597"
+                                        value={formData.shopId}
+                                        onChange={handleInputChange}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label className="form-label">Access Token</label>
+                                    <input
+                                        type="password"
+                                        name="accessToken"
+                                        className="form-input"
+                                        placeholder="••••••••••••••••"
+                                        value={formData.accessToken}
+                                        onChange={handleInputChange}
+                                    />
+                                </div>
+
+                                {testMessage && (
+                                    <div style={{
+                                        padding: 'var(--spacing-md)',
+                                        background: testMessage.type === 'success'
+                                            ? 'rgba(34, 197, 94, 0.1)'
+                                            : 'rgba(239, 68, 68, 0.1)',
+                                        borderRadius: 'var(--radius-md)',
+                                        marginBottom: 'var(--spacing-md)',
+                                        color: testMessage.type === 'success'
+                                            ? 'var(--color-success)'
+                                            : 'var(--color-error)'
+                                    }}>
+                                        {testMessage.text}
+                                    </div>
+                                )}
+
+                                {error && !testMessage && (
+                                    <div style={{
+                                        padding: 'var(--spacing-md)',
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        borderRadius: 'var(--radius-md)',
+                                        marginBottom: 'var(--spacing-md)',
+                                        color: 'var(--color-error)'
+                                    }}>
+                                        ❌ {error}
+                                    </div>
+                                )}
+
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'flex-end',
+                                    gap: 'var(--spacing-md)'
+                                }}>
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={handleTestConnection}
+                                        disabled={isLoading || !formData.shopId || !formData.accessToken}
+                                    >
+                                        {isLoading ? '🔄 テスト中...' : '🧪 接続テスト & 保存'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -194,8 +256,14 @@ function Settings() {
                                     type="text"
                                     className="form-input"
                                     placeholder="あなたのストア名"
-                                    defaultValue="My Shopee Store"
+                                    defaultValue={shopName || "My Shopee Store"}
+                                    readOnly={isConnected}
                                 />
+                                {isConnected && (
+                                    <small style={{ color: 'var(--color-text-secondary)' }}>
+                                        ※ Shopee APIから自動取得されます
+                                    </small>
+                                )}
                             </div>
 
                             <div className="form-group">
