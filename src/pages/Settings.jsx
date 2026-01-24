@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { getAuthUrl } from '../services/shopeeApi'
+import { getAuthUrl, syncProductsToDb } from '../services/shopeeApi'
+
 
 function Settings() {
     const [activeTab, setActiveTab] = useState('api')
@@ -165,6 +166,44 @@ function Settings() {
                                     🔗 Shopee OAuth認証を開始
                                 </button>
                             </div>
+
+                            {/* Database Sync */}
+                            {isConnected && (
+                                <div style={{
+                                    padding: 'var(--spacing-lg)',
+                                    background: 'rgba(59, 130, 246, 0.1)',
+                                    borderRadius: 'var(--radius-md)',
+                                    marginBottom: 'var(--spacing-xl)'
+                                }}>
+                                    <h4 style={{ marginBottom: 'var(--spacing-md)' }}>📊 データベース同期</h4>
+                                    <p style={{ marginBottom: 'var(--spacing-md)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+                                        Shopeeの商品データをデータベースに同期します。価格調整などの高度な機能が利用可能になります。
+                                    </p>
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={async () => {
+                                            const authData = JSON.parse(localStorage.getItem('shopee_auth') || '{}');
+                                            if (!authData.accessToken || !authData.shopId) {
+                                                alert('認証情報がありません');
+                                                return;
+                                            }
+                                            try {
+                                                const result = await syncProductsToDb(authData.accessToken, authData.shopId);
+                                                if (result.status === 'success') {
+                                                    alert(`✅ ${result.message}`);
+                                                } else {
+                                                    alert(`❌ 同期エラー: ${result.message}`);
+                                                }
+                                            } catch (e) {
+                                                alert(`❌ エラー: ${e.message}`);
+                                            }
+                                        }}
+                                    >
+                                        🔄 商品データを同期
+                                    </button>
+                                </div>
+                            )}
+
 
                             {/* Manual Token Input */}
                             <div style={{

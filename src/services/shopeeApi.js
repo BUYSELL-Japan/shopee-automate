@@ -5,6 +5,7 @@
  */
 
 const API_BASE = '/api/shopee';
+const DB_API_BASE = '/api/db';
 
 /**
  * ショップ情報を取得（接続テスト）
@@ -25,7 +26,7 @@ export async function getAuthUrl() {
 }
 
 /**
- * 商品一覧を取得
+ * 商品一覧を取得（Shopee API直接）
  */
 export async function getProducts(accessToken, shopId, options = {}) {
     const { offset = 0, pageSize = 20 } = options;
@@ -59,6 +60,92 @@ export async function getOrders(accessToken, shopId, options = {}) {
     }
 
     const response = await fetch(`${API_BASE}/orders?${params}`);
+    return await response.json();
+}
+
+// =====================================================
+// D1 Database API
+// =====================================================
+
+/**
+ * D1から商品一覧を取得
+ */
+export async function getDbProducts(shopId, options = {}) {
+    const { status = 'all', limit = 100, offset = 0 } = options;
+
+    const params = new URLSearchParams({
+        shop_id: shopId,
+        status,
+        limit: limit.toString(),
+        offset: offset.toString()
+    });
+
+    const response = await fetch(`${DB_API_BASE}/products?${params}`);
+    return await response.json();
+}
+
+/**
+ * D1の商品を更新（価格調整など）
+ */
+export async function updateDbProduct(productData) {
+    const response = await fetch(`${DB_API_BASE}/products`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(productData)
+    });
+    return await response.json();
+}
+
+/**
+ * ShopeeデータをD1に同期
+ */
+export async function syncProductsToDb(accessToken, shopId) {
+    const response = await fetch(
+        `${DB_API_BASE}/sync?access_token=${accessToken}&shop_id=${shopId}`,
+        { method: 'POST' }
+    );
+    return await response.json();
+}
+
+/**
+ * 価格ルール一覧を取得
+ */
+export async function getPriceRules(shopId) {
+    const response = await fetch(`${DB_API_BASE}/price-rules?shop_id=${shopId}`);
+    return await response.json();
+}
+
+/**
+ * 価格ルールを作成
+ */
+export async function createPriceRule(ruleData) {
+    const response = await fetch(`${DB_API_BASE}/price-rules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ruleData)
+    });
+    return await response.json();
+}
+
+/**
+ * 価格ルールを更新
+ */
+export async function updatePriceRule(ruleData) {
+    const response = await fetch(`${DB_API_BASE}/price-rules`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ruleData)
+    });
+    return await response.json();
+}
+
+/**
+ * 価格ルールを削除
+ */
+export async function deletePriceRule(ruleId) {
+    const response = await fetch(`${DB_API_BASE}/price-rules?id=${ruleId}`, {
+        method: 'DELETE'
+    });
     return await response.json();
 }
 
