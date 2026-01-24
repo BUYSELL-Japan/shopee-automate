@@ -90,34 +90,51 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             );
 
             if (orderDetails.response?.order_list) {
-                orders = orderDetails.response.order_list.map((order: any) => ({
-                    id: order.order_sn,
-                    customer: order.buyer_username || "匿名ユーザー",
-                    buyer_user_id: order.buyer_user_id,
-                    items: order.item_list?.length || 0,
-                    item_list: order.item_list?.map((item: any) => ({
-                        name: item.item_name,
-                        sku: item.item_sku,
-                        quantity: item.model_quantity_purchased,
-                        price: item.model_discounted_price || item.model_original_price,
-                        image: item.image_info?.image_url
-                    })) || [],
-                    total: order.total_amount,
-                    currency: order.currency,
-                    status: mapOrderStatus(order.order_status),
-                    order_status: order.order_status,
-                    date: formatTimestamp(order.create_time),
-                    create_time: order.create_time,
-                    update_time: order.update_time,
-                    shipping: {
-                        carrier: order.shipping_carrier,
-                        tracking_number: order.tracking_number,
-                        recipient_address: order.recipient_address
-                    },
-                    payment_method: order.payment_method,
-                    note: order.note || "",
-                    message_to_seller: order.message_to_seller || ""
-                }));
+                orders = orderDetails.response.order_list.map((order: any) => {
+                    // 金額を計算（複数のソースからフォールバック）
+                    let totalAmount = 0;
+                    if (order.total_amount !== undefined && order.total_amount !== null) {
+                        totalAmount = parseFloat(order.total_amount) || 0;
+                    } else if (order.escrow_amount !== undefined) {
+                        totalAmount = parseFloat(order.escrow_amount) || 0;
+                    } else if (order.item_list && order.item_list.length > 0) {
+                        // アイテムから合計を計算
+                        totalAmount = order.item_list.reduce((sum: number, item: any) => {
+                            const price = parseFloat(item.model_discounted_price) || parseFloat(item.model_original_price) || 0;
+                            const qty = parseInt(item.model_quantity_purchased) || 1;
+                            return sum + (price * qty);
+                        }, 0);
+                    }
+
+                    return {
+                        id: order.order_sn,
+                        customer: order.buyer_username || "匿名ユーザー",
+                        buyer_user_id: order.buyer_user_id,
+                        items: order.item_list?.length || 0,
+                        item_list: order.item_list?.map((item: any) => ({
+                            name: item.item_name,
+                            sku: item.item_sku,
+                            quantity: item.model_quantity_purchased,
+                            price: parseFloat(item.model_discounted_price) || parseFloat(item.model_original_price) || 0,
+                            image: item.image_info?.image_url
+                        })) || [],
+                        total: totalAmount,
+                        currency: order.currency || "TWD",
+                        status: mapOrderStatus(order.order_status),
+                        order_status: order.order_status,
+                        date: formatTimestamp(order.create_time),
+                        create_time: order.create_time,
+                        update_time: order.update_time,
+                        shipping: {
+                            carrier: order.shipping_carrier,
+                            tracking_number: order.tracking_number,
+                            recipient_address: order.recipient_address
+                        },
+                        payment_method: order.payment_method,
+                        note: order.note || "",
+                        message_to_seller: order.message_to_seller || ""
+                    };
+                });
             }
         }
 
