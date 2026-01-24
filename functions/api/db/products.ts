@@ -1,6 +1,6 @@
 /**
- * D1 Database Products API
- * 商品データのCRUD操作とShopee同期
+ * D1 Database Products API (Shopee API統一版)
+ * 商品データのCRUD操作 - Shopee APIパラメータと完全統一
  */
 
 interface Env {
@@ -44,31 +44,20 @@ export const onRequest: PagesFunction<Env> = async (context) => {
  */
 async function handleGet(db: D1Database, shopId: string | null, url: URL): Promise<Response> {
     const productId = url.searchParams.get("id");
-    const shopeeItemId = url.searchParams.get("shopee_item_id");
-    const status = url.searchParams.get("status");
+    const itemId = url.searchParams.get("item_id");
+    const status = url.searchParams.get("item_status") || url.searchParams.get("status");
     const limit = parseInt(url.searchParams.get("limit") || "100");
     const offset = parseInt(url.searchParams.get("offset") || "0");
 
     if (productId) {
-        // 単一商品取得
-        const result = await db.prepare(
-            "SELECT * FROM products WHERE id = ?"
-        ).bind(productId).first();
-
-        if (!result) {
-            return errorResponse("Product not found", 404);
-        }
-
-        return jsonResponse({ status: "success", data: result });
+        const result = await db.prepare("SELECT * FROM products WHERE id = ?").bind(productId).first();
+        if (!result) return errorResponse("Product not found", 404);
+        return jsonResponse({ status: "success", data: parseProduct(result) });
     }
 
-    if (shopeeItemId) {
-        // Shopee Item IDで検索
-        const result = await db.prepare(
-            "SELECT * FROM products WHERE shopee_item_id = ?"
-        ).bind(shopeeItemId).first();
-
-        return jsonResponse({ status: "success", data: result || null });
+    if (itemId) {
+        const result = await db.prepare("SELECT * FROM products WHERE item_id = ?").bind(itemId).first();
+        return jsonResponse({ status: "success", data: result ? parseProduct(result) : null });
     }
 
     // 商品一覧取得
@@ -77,15 +66,15 @@ async function handleGet(db: D1Database, shopId: string | null, url: URL): Promi
 
     if (shopId) {
         query += " AND shop_id = ?";
-        params.push(shopId);
+        params.push(parseInt(shopId));
     }
 
     if (status && status !== "all") {
-        query += " AND status = ?";
-        params.push(status);
+        query += " AND item_status = ?";
+        params.push(status.toUpperCase());
     }
 
-    query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?";
+    query += " ORDER BY update_time DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
 
     const results = await db.prepare(query).bind(...params).all();
@@ -95,18 +84,21 @@ async function handleGet(db: D1Database, shopId: string | null, url: URL): Promi
     const countParams: any[] = [];
     if (shopId) {
         countQuery += " AND shop_id = ?";
-        countParams.push(shopId);
+        countParams.push(parseInt(shopId));
     }
     if (status && status !== "all") {
-        countQuery += " AND status = ?";
-        countParams.push(status);
+        countQuery += " AND item_status = ?";
+        countParams.push(status.toUpperCase());
     }
     const countResult = await db.prepare(countQuery).bind(...countParams).first<{ total: number }>();
+
+    // JSONフィールドをパース
+    const products = results.results.map(parseProduct);
 
     return jsonResponse({
         status: "success",
         data: {
-            products: results.results,
+            products,
             total: countResult?.total || 0,
             limit,
             offset
@@ -115,203 +107,161 @@ async function handleGet(db: D1Database, shopId: string | null, url: URL): Promi
 }
 
 /**
- * POST: 商品を追加または一括同期
+ * POST: 商品を追加（Shopee add_item互換）
  */
 async function handlePost(db: D1Database, request: Request): Promise<Response> {
-    const body = await request.json() as any;
+    const product = await request.json() as any;
 
-    // 一括同期モード
-    if (body.action === "sync" && body.products) {
-        return await syncProducts(db, body.shop_id, body.products);
-    }
-
-    // 単一商品追加
-    const product = body;
-
+    // Shopee add_item APIと同じパラメータ名を使用
     const result = await db.prepare(`
         INSERT INTO products (
-            shopee_item_id, shop_id, name, description, category_id,
-            image_url, images, original_price, current_price, currency,
-            stock, status, shopee_status, sold, views, likes, rating_star,
-            shopee_create_time, shopee_update_time, last_synced_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        ON CONFLICT(shopee_item_id) DO UPDATE SET
-            name = excluded.name,
-            description = excluded.description,
-            original_price = excluded.original_price,
-            current_price = excluded.current_price,
-            stock = excluded.stock,
-            status = excluded.status,
-            shopee_status = excluded.shopee_status,
-            sold = excluded.sold,
-            views = excluded.views,
-            likes = excluded.likes,
-            rating_star = excluded.rating_star,
-            shopee_update_time = excluded.shopee_update_time,
-            last_synced_at = datetime('now'),
-            updated_at = datetime('now')
+            item_id, shop_id, item_name, description, description_type, item_sku,
+            category_id, original_price, current_price, currency, stock,
+            image_url, image_url_list, image_id_list, weight,
+            package_length, package_width, package_height,
+            condition, item_status, attribute_list, logistic_info,
+            has_model, model_list, pre_order_days_to_ship, brand_id,
+            wholesale_list, video_info, custom_price, cost_price, source_url, notes, tags
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-        product.shopee_item_id,
+        product.item_id || null,
         product.shop_id,
-        product.name,
+        product.item_name,
         product.description || null,
+        product.description_type || 'normal',
+        product.item_sku || null,
         product.category_id || null,
-        product.image_url || null,
-        JSON.stringify(product.images || []),
-        product.original_price || 0,
-        product.current_price || 0,
-        product.currency || "TWD",
+        product.original_price || null,
+        product.current_price || product.original_price || null,
+        product.currency || 'TWD',
         product.stock || 0,
-        product.status || "active",
-        product.shopee_status || null,
-        product.sold || 0,
-        product.views || 0,
-        product.likes || 0,
-        product.rating_star || 0,
-        product.shopee_create_time || null,
-        product.shopee_update_time || null
+        Array.isArray(product.image_url_list) ? product.image_url_list[0] : (product.image_url || null),
+        JSON.stringify(product.image_url_list || product.image?.image_url_list || []),
+        JSON.stringify(product.image_id_list || product.image?.image_id_list || []),
+        product.weight || null,
+        product.dimension?.package_length || product.package_length || null,
+        product.dimension?.package_width || product.package_width || null,
+        product.dimension?.package_height || product.package_height || null,
+        product.condition || 'NEW',
+        product.item_status || 'NORMAL',
+        JSON.stringify(product.attribute_list || []),
+        JSON.stringify(product.logistic_info || []),
+        product.has_model ? 1 : 0,
+        JSON.stringify(product.model_list || []),
+        product.pre_order?.days_to_ship || product.pre_order_days_to_ship || null,
+        product.brand?.brand_id || product.brand_id || null,
+        JSON.stringify(product.wholesale || []),
+        JSON.stringify(product.video_info || null),
+        product.custom_price || null,
+        product.cost_price || null,
+        product.source_url || null,
+        product.notes || null,
+        JSON.stringify(product.tags || [])
     ).run();
 
     return jsonResponse({
         status: "success",
-        message: "Product saved",
-        data: { changes: result.meta.changes }
+        message: "Product created",
+        data: { id: result.meta.last_row_id }
     });
 }
 
 /**
- * 商品一括同期
- */
-async function syncProducts(db: D1Database, shopId: string, products: any[]): Promise<Response> {
-    let synced = 0;
-    let failed = 0;
-
-    for (const product of products) {
-        try {
-            await db.prepare(`
-                INSERT INTO products (
-                    shopee_item_id, shop_id, name, description, category_id,
-                    image_url, images, original_price, current_price, currency,
-                    stock, status, shopee_status, sold, views, likes, rating_star,
-                    shopee_create_time, shopee_update_time, last_synced_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(shopee_item_id) DO UPDATE SET
-                    name = excluded.name,
-                    original_price = excluded.original_price,
-                    current_price = excluded.current_price,
-                    stock = excluded.stock,
-                    status = excluded.status,
-                    sold = excluded.sold,
-                    rating_star = excluded.rating_star,
-                    last_synced_at = datetime('now'),
-                    updated_at = datetime('now')
-            `).bind(
-                String(product.id),
-                shopId,
-                product.name,
-                product.description || null,
-                product.category_id || null,
-                product.image || null,
-                JSON.stringify(product.images || []),
-                product.originalPrice || product.price || 0,
-                product.price || 0,
-                product.currency || "TWD",
-                product.stock || 0,
-                product.status || "active",
-                product.shopee_status || null,
-                product.sold || 0,
-                product.views || 0,
-                product.likes || 0,
-                product.rating_star || 0,
-                product.create_time || null,
-                product.update_time || null
-            ).run();
-            synced++;
-        } catch (e) {
-            console.error("Sync error for product:", product.id, e);
-            failed++;
-        }
-    }
-
-    // 同期ログを記録
-    await db.prepare(`
-        INSERT INTO sync_logs (shop_id, sync_type, status, items_synced, items_failed, completed_at)
-        VALUES (?, 'products', ?, ?, ?, datetime('now'))
-    `).bind(shopId, failed > 0 ? "partial" : "success", synced, failed).run();
-
-    return jsonResponse({
-        status: "success",
-        message: `Synced ${synced} products, ${failed} failed`,
-        data: { synced, failed }
-    });
-}
-
-/**
- * PUT: 商品を更新（価格調整など）
+ * PUT: 商品を更新（Shopee update_item互換）
  */
 async function handlePut(db: D1Database, request: Request): Promise<Response> {
     const body = await request.json() as any;
-    const { id, shopee_item_id, ...updates } = body;
+    const { id, item_id, ...updates } = body;
 
-    if (!id && !shopee_item_id) {
-        return errorResponse("id or shopee_item_id required", 400);
+    if (!id && !item_id) {
+        return errorResponse("id or item_id required", 400);
     }
 
     // 現在の価格を取得（履歴用）
     const current = await db.prepare(
-        "SELECT id, current_price FROM products WHERE " + (id ? "id = ?" : "shopee_item_id = ?")
-    ).bind(id || shopee_item_id).first<{ id: number, current_price: number }>();
+        "SELECT id, item_id, current_price FROM products WHERE " + (id ? "id = ?" : "item_id = ?")
+    ).bind(id || item_id).first<{ id: number, item_id: number, current_price: number }>();
 
-    // 更新クエリを構築
+    // 更新可能フィールド（Shopee API互換）
     const updateFields: string[] = [];
     const params: any[] = [];
 
-    if (updates.adjusted_price !== undefined) {
-        updateFields.push("adjusted_price = ?");
-        params.push(updates.adjusted_price);
+    const fieldMapping: Record<string, string> = {
+        item_name: 'item_name',
+        description: 'description',
+        description_type: 'description_type',
+        item_sku: 'item_sku',
+        category_id: 'category_id',
+        original_price: 'original_price',
+        current_price: 'current_price',
+        stock: 'stock',
+        weight: 'weight',
+        package_length: 'package_length',
+        package_width: 'package_width',
+        package_height: 'package_height',
+        condition: 'condition',
+        item_status: 'item_status',
+        custom_price: 'custom_price',
+        cost_price: 'cost_price',
+        source_url: 'source_url',
+        notes: 'notes',
+        price_rule_id: 'price_rule_id',
+        auto_adjust_enabled: 'auto_adjust_enabled',
+        min_price: 'min_price',
+        max_price: 'max_price'
+    };
+
+    for (const [key, dbField] of Object.entries(fieldMapping)) {
+        if (updates[key] !== undefined) {
+            updateFields.push(`${dbField} = ?`);
+            params.push(updates[key]);
+        }
     }
-    if (updates.price_rule_id !== undefined) {
-        updateFields.push("price_rule_id = ?");
-        params.push(updates.price_rule_id);
+
+    // JSON フィールド
+    if (updates.attribute_list !== undefined) {
+        updateFields.push("attribute_list = ?");
+        params.push(JSON.stringify(updates.attribute_list));
     }
-    if (updates.auto_adjust_enabled !== undefined) {
-        updateFields.push("auto_adjust_enabled = ?");
-        params.push(updates.auto_adjust_enabled ? 1 : 0);
+    if (updates.logistic_info !== undefined) {
+        updateFields.push("logistic_info = ?");
+        params.push(JSON.stringify(updates.logistic_info));
     }
-    if (updates.min_price !== undefined) {
-        updateFields.push("min_price = ?");
-        params.push(updates.min_price);
+    if (updates.image_url_list !== undefined) {
+        updateFields.push("image_url_list = ?");
+        params.push(JSON.stringify(updates.image_url_list));
+        if (updates.image_url_list.length > 0) {
+            updateFields.push("image_url = ?");
+            params.push(updates.image_url_list[0]);
+        }
     }
-    if (updates.max_price !== undefined) {
-        updateFields.push("max_price = ?");
-        params.push(updates.max_price);
-    }
-    if (updates.status !== undefined) {
-        updateFields.push("status = ?");
-        params.push(updates.status);
+    if (updates.tags !== undefined) {
+        updateFields.push("tags = ?");
+        params.push(JSON.stringify(updates.tags));
     }
 
     updateFields.push("updated_at = datetime('now')");
+    params.push(id || item_id);
 
     if (updateFields.length === 1) {
         return errorResponse("No valid fields to update", 400);
     }
 
-    const query = `UPDATE products SET ${updateFields.join(", ")} WHERE ` + (id ? "id = ?" : "shopee_item_id = ?");
-    params.push(id || shopee_item_id);
-
-    await db.prepare(query).bind(...params).run();
+    await db.prepare(
+        `UPDATE products SET ${updateFields.join(", ")} WHERE ` + (id ? "id = ?" : "item_id = ?")
+    ).bind(...params).run();
 
     // 価格変更履歴を記録
-    if (updates.adjusted_price !== undefined && current) {
+    if ((updates.current_price !== undefined || updates.custom_price !== undefined) && current) {
+        const newPrice = updates.custom_price || updates.current_price;
         await db.prepare(`
-            INSERT INTO price_history (product_id, shopee_item_id, old_price, new_price, change_reason, price_rule_id)
+            INSERT INTO price_history (product_id, item_id, old_price, new_price, change_reason, price_rule_id)
             VALUES (?, ?, ?, ?, ?, ?)
         `).bind(
             current.id,
-            shopee_item_id || String(id),
+            current.item_id,
             current.current_price,
-            updates.adjusted_price,
+            newPrice,
             updates.change_reason || "manual",
             updates.price_rule_id || null
         ).run();
@@ -325,17 +275,45 @@ async function handlePut(db: D1Database, request: Request): Promise<Response> {
  */
 async function handleDelete(db: D1Database, url: URL): Promise<Response> {
     const id = url.searchParams.get("id");
-    const shopeeItemId = url.searchParams.get("shopee_item_id");
+    const itemId = url.searchParams.get("item_id");
 
-    if (!id && !shopeeItemId) {
-        return errorResponse("id or shopee_item_id required", 400);
+    if (!id && !itemId) {
+        return errorResponse("id or item_id required", 400);
     }
 
     await db.prepare(
-        "DELETE FROM products WHERE " + (id ? "id = ?" : "shopee_item_id = ?")
-    ).bind(id || shopeeItemId).run();
+        "DELETE FROM products WHERE " + (id ? "id = ?" : "item_id = ?")
+    ).bind(id || itemId).run();
 
     return jsonResponse({ status: "success", message: "Product deleted" });
+}
+
+/**
+ * JSONフィールドをパースして返す
+ */
+function parseProduct(row: any): any {
+    return {
+        ...row,
+        image_url_list: safeJsonParse(row.image_url_list, []),
+        image_id_list: safeJsonParse(row.image_id_list, []),
+        attribute_list: safeJsonParse(row.attribute_list, []),
+        logistic_info: safeJsonParse(row.logistic_info, []),
+        model_list: safeJsonParse(row.model_list, []),
+        wholesale_list: safeJsonParse(row.wholesale_list, []),
+        video_info: safeJsonParse(row.video_info, null),
+        tags: safeJsonParse(row.tags, []),
+        has_model: !!row.has_model,
+        auto_adjust_enabled: !!row.auto_adjust_enabled
+    };
+}
+
+function safeJsonParse(str: string | null, defaultValue: any): any {
+    if (!str) return defaultValue;
+    try {
+        return JSON.parse(str);
+    } catch {
+        return defaultValue;
+    }
 }
 
 // ヘルパー関数

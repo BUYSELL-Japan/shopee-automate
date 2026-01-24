@@ -1,6 +1,6 @@
 /**
- * D1 Database Sync API
- * ShopeeデータとD1の同期を管理
+ * D1 Database Sync API (Shopee API統一版)
+ * ShopeeデータをShopee APIパラメータと完全に統一してD1に保存
  */
 
 interface Env {
@@ -53,27 +53,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 const details = await getItemBaseInfo(partnerId, partnerKey, accessToken, parseInt(shopId), itemIds);
 
                 if (details.response?.item_list) {
+                    // Shopee APIのレスポンスをそのまま保存
                     for (const item of details.response.item_list) {
-                        allProducts.push({
-                            id: item.item_id,
-                            name: item.item_name,
-                            description: item.description,
-                            category_id: item.category_id,
-                            image: item.image?.image_url_list?.[0] || null,
-                            images: item.image?.image_url_list || [],
-                            originalPrice: item.price_info?.[0]?.original_price || 0,
-                            price: item.price_info?.[0]?.current_price || 0,
-                            currency: item.price_info?.[0]?.currency || "TWD",
-                            stock: item.stock_info_v2?.summary_info?.total_available_stock || 0,
-                            status: mapItemStatus(item.item_status),
-                            shopee_status: item.item_status,
-                            sold: item.sold || 0,
-                            views: item.views || 0,
-                            likes: item.likes || 0,
-                            rating_star: item.rating_star || 0,
-                            create_time: item.create_time,
-                            update_time: item.update_time
-                        });
+                        allProducts.push(item);
                     }
                 }
             }
@@ -82,56 +64,83 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             offset = result.response.next_offset || offset + 50;
         }
 
-        // 2. D1に同期
+        // 2. D1に同期（Shopee APIパラメータと完全統一）
         let synced = 0;
         let failed = 0;
 
-        for (const product of allProducts) {
+        for (const item of allProducts) {
             try {
                 await env.DB.prepare(`
                     INSERT INTO products (
-                        shopee_item_id, shop_id, name, description, category_id,
-                        image_url, images, original_price, current_price, currency,
-                        stock, status, shopee_status, sold, views, likes, rating_star,
-                        shopee_create_time, shopee_update_time, last_synced_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                    ON CONFLICT(shopee_item_id) DO UPDATE SET
-                        name = excluded.name,
+                        item_id, shop_id, item_name, description, description_type, item_sku,
+                        category_id, original_price, current_price, currency, stock,
+                        image_url, image_url_list, weight, package_length, package_width, package_height,
+                        condition, item_status, sold, views, likes, rating_star, cmt_count,
+                        attribute_list, logistic_info, has_model, brand_id,
+                        create_time, update_time, last_synced_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    ON CONFLICT(item_id) DO UPDATE SET
+                        item_name = excluded.item_name,
                         description = excluded.description,
-                        image_url = excluded.image_url,
-                        images = excluded.images,
+                        description_type = excluded.description_type,
+                        item_sku = excluded.item_sku,
+                        category_id = excluded.category_id,
                         original_price = excluded.original_price,
                         current_price = excluded.current_price,
+                        currency = excluded.currency,
                         stock = excluded.stock,
-                        status = excluded.status,
-                        shopee_status = excluded.shopee_status,
+                        image_url = excluded.image_url,
+                        image_url_list = excluded.image_url_list,
+                        weight = excluded.weight,
+                        package_length = excluded.package_length,
+                        package_width = excluded.package_width,
+                        package_height = excluded.package_height,
+                        condition = excluded.condition,
+                        item_status = excluded.item_status,
                         sold = excluded.sold,
                         views = excluded.views,
                         likes = excluded.likes,
                         rating_star = excluded.rating_star,
-                        shopee_update_time = excluded.shopee_update_time,
+                        cmt_count = excluded.cmt_count,
+                        attribute_list = excluded.attribute_list,
+                        logistic_info = excluded.logistic_info,
+                        has_model = excluded.has_model,
+                        brand_id = excluded.brand_id,
+                        update_time = excluded.update_time,
                         last_synced_at = datetime('now'),
                         updated_at = datetime('now')
                 `).bind(
-                    String(product.id),
-                    shopId,
-                    product.name,
-                    product.description || null,
-                    product.category_id || null,
-                    product.image || null,
-                    JSON.stringify(product.images || []),
-                    product.originalPrice || 0,
-                    product.price || 0,
-                    product.currency || "TWD",
-                    product.stock || 0,
-                    product.status || "active",
-                    product.shopee_status || null,
-                    product.sold || 0,
-                    product.views || 0,
-                    product.likes || 0,
-                    product.rating_star || 0,
-                    product.create_time || null,
-                    product.update_time || null
+                    // Shopee APIパラメータをそのまま使用
+                    item.item_id,
+                    parseInt(shopId),
+                    item.item_name,
+                    item.description || null,
+                    item.description_type || 'normal',
+                    item.item_sku || null,
+                    item.category_id || null,
+                    item.price_info?.[0]?.original_price || null,
+                    item.price_info?.[0]?.current_price || null,
+                    item.price_info?.[0]?.currency || 'TWD',
+                    item.stock_info_v2?.summary_info?.total_available_stock || 0,
+                    item.image?.image_url_list?.[0] || null,
+                    JSON.stringify(item.image?.image_url_list || []),
+                    item.weight || null,
+                    item.dimension?.package_length || null,
+                    item.dimension?.package_width || null,
+                    item.dimension?.package_height || null,
+                    item.condition || 'NEW',
+                    item.item_status || 'NORMAL',
+                    item.sold || 0,
+                    item.views || 0,
+                    item.likes || 0,
+                    item.rating_star || 0,
+                    item.cmt_count || 0,
+                    JSON.stringify(item.attribute_list || []),
+                    JSON.stringify(item.logistic_info || []),
+                    item.has_model ? 1 : 0,
+                    item.brand?.brand_id || null,
+                    item.create_time || null,
+                    item.update_time || null
                 ).run();
                 synced++;
             } catch (e) {
@@ -144,7 +153,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         await env.DB.prepare(`
             INSERT INTO sync_logs (shop_id, sync_type, status, items_synced, items_failed, completed_at)
             VALUES (?, 'products', ?, ?, ?, datetime('now'))
-        `).bind(shopId, failed > 0 ? "partial" : "success", synced, failed).run();
+        `).bind(parseInt(shopId), failed > 0 ? "partial" : "success", synced, failed).run();
 
         return jsonResponse({
             status: "success",
@@ -182,11 +191,6 @@ async function getItemBaseInfo(partnerId: string, partnerKey: string, accessToke
     const apiUrl = `${SHOPEE_HOST}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${sign}&access_token=${accessToken}&shop_id=${shopId}&item_id_list=${itemIdList}`;
     const response = await fetch(apiUrl);
     return await response.json();
-}
-
-function mapItemStatus(status: string): string {
-    const statusMap: Record<string, string> = { "NORMAL": "active", "UNLIST": "inactive", "BANNED": "banned", "DELETED": "deleted" };
-    return statusMap[status] || "unknown";
 }
 
 async function hmacSha256(key: string, message: string): Promise<string> {
