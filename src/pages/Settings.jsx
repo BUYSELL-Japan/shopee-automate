@@ -10,8 +10,11 @@ function Settings() {
         accessToken: ''
     })
     const [testMessage, setTestMessage] = useState(null)
+    const [isSyncing, setIsSyncing] = useState(false)
+    const [syncResult, setSyncResult] = useState(null)
 
     const {
+        accessToken: savedAccessToken,
         shopId: savedShopId,
         shopName,
         isConnected,
@@ -179,27 +182,55 @@ function Settings() {
                                     <p style={{ marginBottom: 'var(--spacing-md)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
                                         Shopeeの商品データをデータベースに同期します。価格調整などの高度な機能が利用可能になります。
                                     </p>
+
+                                    {syncResult && (
+                                        <div style={{
+                                            padding: 'var(--spacing-md)',
+                                            marginBottom: 'var(--spacing-md)',
+                                            borderRadius: 'var(--radius-md)',
+                                            background: syncResult.type === 'success' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                                            color: syncResult.type === 'success' ? 'var(--color-success)' : 'var(--color-error)'
+                                        }}>
+                                            {syncResult.message}
+                                        </div>
+                                    )}
+
                                     <button
                                         className="btn btn-primary"
+                                        disabled={isSyncing}
                                         onClick={async () => {
-                                            const authData = JSON.parse(localStorage.getItem('shopee_auth') || '{}');
-                                            if (!authData.accessToken || !authData.shopId) {
-                                                alert('認証情報がありません');
+                                            if (!savedAccessToken || !savedShopId) {
+                                                setSyncResult({ type: 'error', message: '❌ 認証情報がありません。まずShopee OAuth認証を完了してください。' });
                                                 return;
                                             }
+
+                                            setIsSyncing(true);
+                                            setSyncResult(null);
+
                                             try {
-                                                const result = await syncProductsToDb(authData.accessToken, authData.shopId);
+                                                const result = await syncProductsToDb(savedAccessToken, savedShopId);
                                                 if (result.status === 'success') {
-                                                    alert(`✅ ${result.message}`);
+                                                    setSyncResult({
+                                                        type: 'success',
+                                                        message: `✅ ${result.message} (${result.data?.synced || 0}件同期完了)`
+                                                    });
                                                 } else {
-                                                    alert(`❌ 同期エラー: ${result.message}`);
+                                                    setSyncResult({
+                                                        type: 'error',
+                                                        message: `❌ 同期エラー: ${result.message}`
+                                                    });
                                                 }
                                             } catch (e) {
-                                                alert(`❌ エラー: ${e.message}`);
+                                                setSyncResult({
+                                                    type: 'error',
+                                                    message: `❌ エラー: ${e.message}`
+                                                });
+                                            } finally {
+                                                setIsSyncing(false);
                                             }
                                         }}
                                     >
-                                        🔄 商品データを同期
+                                        {isSyncing ? '⏳ 同期中...' : '🔄 商品データを同期'}
                                     </button>
                                 </div>
                             )}

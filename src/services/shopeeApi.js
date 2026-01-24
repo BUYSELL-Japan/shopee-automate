@@ -150,20 +150,20 @@ export async function deletePriceRule(ruleId) {
 }
 
 /**
- * 価格をフォーマット (TWD)
+ * 価格をフォーマット (TWD → NT$)
  */
 export function formatPrice(price, currency = 'TWD') {
+    // 数値でない場合は0として処理
+    const numPrice = parseFloat(price) || 0;
+
     if (currency === 'TWD') {
-        return new Intl.NumberFormat('zh-TW', {
-            style: 'currency',
-            currency: 'TWD',
-            minimumFractionDigits: 0
-        }).format(price);
+        // NT$表記で統一
+        return `NT$${numPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
     }
     return new Intl.NumberFormat('ja-JP', {
         style: 'currency',
         currency: currency
-    }).format(price);
+    }).format(numPrice);
 }
 
 /**

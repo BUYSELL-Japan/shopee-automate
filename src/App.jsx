@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
 import ProductList from './pages/ProductList'
+import ProductDetail from './pages/ProductDetail'
 import NewProduct from './pages/NewProduct'
 import BulkUpload from './pages/BulkUpload'
 import Orders from './pages/Orders'
@@ -15,6 +16,7 @@ function App() {
                 <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/products" element={<ProductList />} />
+                    <Route path="/products/:id" element={<ProductDetail />} />
                     <Route path="/products/new" element={<NewProduct />} />
                     <Route path="/bulk-upload" element={<BulkUpload />} />
                     <Route path="/orders" element={<Orders />} />
@@ -26,3 +28,4 @@ function App() {
 }
 
 export default App
+
