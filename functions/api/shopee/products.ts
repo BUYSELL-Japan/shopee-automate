@@ -146,7 +146,8 @@ async function getItemList(
     const baseString = `${partnerId}${path}${timestamp}${accessToken}${shopId}`;
     const sign = await hmacSha256(partnerKey, baseString);
 
-    const apiUrl = `${SHOPEE_HOST}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${sign}&access_token=${accessToken}&shop_id=${shopId}&offset=${offset}&page_size=${pageSize}`;
+    // 複数のステータスを指定（在庫0の商品も含む）
+    const apiUrl = `${SHOPEE_HOST}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${sign}&access_token=${accessToken}&shop_id=${shopId}&offset=${offset}&page_size=${pageSize}&item_status=NORMAL&item_status=UNLIST`;
 
     const response = await fetch(apiUrl, {
         method: "GET",
