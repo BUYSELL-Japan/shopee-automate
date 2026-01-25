@@ -16,10 +16,11 @@ function ProfitCalculator() {
     const [error, setError] = useState(null)
     const [costSettings, setCostSettings] = useState(DEFAULT_COSTS)
     const [orderCosts, setOrderCosts] = useState({}) // 注文ごとの費用編集
+    const [statusFilter, setStatusFilter] = useState('all') // ステータスフィルタ
 
     const { accessToken, shopId, isConnected } = useShopeeAuth()
 
-    // 注文一覧を取得（完了した注文のみ）
+    // 注文一覧を取得（全注文）
     const fetchOrders = async () => {
         if (!isConnected || !accessToken || !shopId) return
 
@@ -27,18 +28,18 @@ function ProfitCalculator() {
         setError(null)
 
         try {
+            // 全注文を取得（ステータス指定なし）
             const result = await getOrders(accessToken, shopId, {
-                orderStatus: 'COMPLETED',
                 pageSize: 100
             })
 
             if (result.status === 'success') {
-                const completedOrders = result.data.orders || []
-                setOrders(completedOrders)
+                const allOrders = result.data.orders || []
+                setOrders(allOrders)
 
                 // 初期費用を設定
                 const initialCosts = {}
-                completedOrders.forEach(order => {
+                allOrders.forEach(order => {
                     initialCosts[order.id] = {
                         commission: Math.round(order.total * costSettings.commissionRate),
                         yamatoShipping: costSettings.yamatoShipping,
@@ -114,13 +115,19 @@ function ProfitCalculator() {
         }
     }
 
+    // フィルタリング
+    const filteredOrders = orders.filter(order => {
+        if (statusFilter === 'all') return true
+        return order.status === statusFilter || order.order_status === statusFilter
+    })
+
     // 合計計算
     const calculateTotals = () => {
         let totalSalesJPY = 0
         let totalCostsJPY = 0
         let totalProfitJPY = 0
 
-        orders.forEach(order => {
+        filteredOrders.forEach(order => {
             const profit = calculateProfit(order)
             totalSalesJPY += profit.salesJPY
             totalCostsJPY += profit.totalCostJPY
@@ -134,7 +141,7 @@ function ProfitCalculator() {
             totalCostsTWD: jpyToTwd(totalCostsJPY),
             totalProfitJPY,
             totalProfitTWD: jpyToTwd(totalProfitJPY),
-            orderCount: orders.length
+            orderCount: filteredOrders.length
         }
     }
 
@@ -169,7 +176,7 @@ function ProfitCalculator() {
                 <div>
                     <h1 className="page-title">💰 利益計算</h1>
                     <p className="page-subtitle">
-                        {isLoading ? '読み込み中...' : `${orders.length}件の完了注文`}
+                        {isLoading ? '読み込み中...' : `${filteredOrders.length}件の注文 (総数: ${orders.length})`}
                     </p>
                 </div>
                 <button
@@ -180,6 +187,27 @@ function ProfitCalculator() {
                     🔄 データを更新
                 </button>
             </header>
+
+            {/* ステータスフィルタ */}
+            <div className="card" style={{ marginBottom: 'var(--spacing-lg)', padding: 'var(--spacing-md)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)', flexWrap: 'wrap' }}>
+                    <span>📊 ステータスで絞り込み:</span>
+                    <select
+                        className="form-input form-select"
+                        style={{ width: 'auto', minWidth: 150 }}
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                    >
+                        <option value="all">すべての注文</option>
+                        <option value="COMPLETED">完了</option>
+                        <option value="SHIPPED">発送済み</option>
+                        <option value="READY_TO_SHIP">発送準備中</option>
+                        <option value="TO_CONFIRM_RECEIVE">配送中</option>
+                        <option value="UNPAID">未払い</option>
+                        <option value="CANCELLED">キャンセル</option>
+                    </select>
+                </div>
+            </div>
 
             {/* 費用設定 */}
             <div className="card" style={{ marginBottom: 'var(--spacing-xl)' }}>
@@ -289,14 +317,15 @@ function ProfitCalculator() {
             )}
 
             {/* 注文リスト */}
-            {!isLoading && !error && orders.length > 0 && (
+            {!isLoading && !error && filteredOrders.length > 0 && (
                 <div className="card">
                     <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>📋 注文別利益一覧</h3>
                     <div style={{ overflowX: 'auto' }}>
-                        <table className="table" style={{ minWidth: 900 }}>
+                        <table className="table" style={{ minWidth: 1000 }}>
                             <thead>
                                 <tr>
                                     <th>注文ID</th>
+                                    <th>ステータス</th>
                                     <th>商品</th>
                                     <th>売上</th>
                                     <th>手数料9%</th>
@@ -308,13 +337,18 @@ function ProfitCalculator() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {orders.map(order => {
+                                {filteredOrders.map(order => {
                                     const profit = calculateProfit(order)
                                     const costs = orderCosts[order.id] || {}
 
                                     return (
                                         <tr key={order.id}>
                                             <td style={{ fontWeight: 600 }}>{order.id}</td>
+                                            <td>
+                                                <span className={`badge ${order.status === 'COMPLETED' || order.order_status === 'COMPLETED' ? 'badge-success' : 'badge-warning'}`}>
+                                                    {order.status || order.order_status || 'N/A'}
+                                                </span>
+                                            </td>
                                             <td>
                                                 {order.item_list?.slice(0, 2).map((item, idx) => (
                                                     <div key={idx} style={{ fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>

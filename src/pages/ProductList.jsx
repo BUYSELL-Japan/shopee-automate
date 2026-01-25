@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { getProducts, getDbProducts, syncProductsToDb, formatPrice, getStatusBadge } from '../services/shopeeApi'
+import { getProducts, getDbProducts, syncProductsToDb, formatPrice, formatPriceWithJPY, twdToJpy, getStatusBadge } from '../services/shopeeApi'
 
 function ProductList() {
     const [searchTerm, setSearchTerm] = useState('')
@@ -473,6 +473,9 @@ function ProductCard({ product, dataSource }) {
                 </div>
                 <div className="product-price">
                     {formatPrice(product.price, product.currency)}
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                        ¥{twdToJpy(product.price || 0).toLocaleString()}
+                    </div>
                 </div>
                 <div className="product-meta">
                     <span>在庫: {product.stock}</span>

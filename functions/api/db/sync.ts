@@ -39,24 +39,42 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         const allProducts: any[] = [];
         let offset = 0;
         let hasMore = true;
+        let debugInfo: any[] = [];
 
         while (hasMore) {
             const result = await getItemList(partnerId, partnerKey, accessToken, parseInt(shopId), offset);
 
-            if (result.error || !result.response?.item) {
+            // デバッグ情報を記録
+            debugInfo.push({
+                offset,
+                hasError: !!result.error,
+                errorMessage: result.error || result.message,
+                itemCount: result.response?.item?.length || 0,
+                hasNextPage: result.response?.has_next_page
+            });
+
+            if (result.error) {
+                // エラーの場合は詳細情報を返す
+                return jsonResponse({
+                    status: "error",
+                    message: `Shopee API error: ${result.error} - ${result.message || ''}`,
+                    debug: debugInfo
+                }, 400);
+            }
+
+            if (!result.response?.item || result.response.item.length === 0) {
+                // 商品がない場合はループを終了
                 break;
             }
 
             // 商品詳細を取得
-            if (result.response.item.length > 0) {
-                const itemIds = result.response.item.map((i: any) => i.item_id);
-                const details = await getItemBaseInfo(partnerId, partnerKey, accessToken, parseInt(shopId), itemIds);
+            const itemIds = result.response.item.map((i: any) => i.item_id);
+            const details = await getItemBaseInfo(partnerId, partnerKey, accessToken, parseInt(shopId), itemIds);
 
-                if (details.response?.item_list) {
-                    // Shopee APIのレスポンスをそのまま保存
-                    for (const item of details.response.item_list) {
-                        allProducts.push(item);
-                    }
+            if (details.response?.item_list) {
+                // Shopee APIのレスポンスをそのまま保存
+                for (const item of details.response.item_list) {
+                    allProducts.push(item);
                 }
             }
 
