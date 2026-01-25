@@ -14,6 +14,32 @@ function NewProduct() {
         weight: '',
         images: []
     })
+    const [translating, setTranslating] = useState({ name: false, description: false })
+
+    const handleTranslate = async (field) => {
+        const text = formData[field]
+        if (!text) return
+
+        setTranslating(prev => ({ ...prev, [field]: true }))
+        try {
+            const response = await fetch('/api/ai/translate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            })
+            const result = await response.json()
+
+            if (result.status === 'success') {
+                setFormData(prev => ({ ...prev, [field]: result.translation }))
+            } else {
+                alert('翻訳エラー: ' + result.message)
+            }
+        } catch (e) {
+            alert('翻訳エラーが発生しました')
+        } finally {
+            setTranslating(prev => ({ ...prev, [field]: false }))
+        }
+    }
 
     const handleChange = (e) => {
         const { name, value } = e.target
@@ -43,7 +69,18 @@ function NewProduct() {
                         <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
 
                         <div className="form-group">
-                            <label className="form-label">商品名 *</label>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <label className="form-label" style={{ marginBottom: 0 }}>商品名 *</label>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => handleTranslate('name')}
+                                    disabled={translating.name || !formData.name}
+                                    style={{ fontSize: '0.75rem', padding: '2px 8px', height: 'auto' }}
+                                >
+                                    {translating.name ? '翻訳中...' : '✨ AI翻訳 (台湾語)'}
+                                </button>
+                            </div>
                             <input
                                 type="text"
                                 name="name"
@@ -56,7 +93,18 @@ function NewProduct() {
                         </div>
 
                         <div className="form-group">
-                            <label className="form-label">商品説明</label>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <label className="form-label" style={{ marginBottom: 0 }}>商品説明</label>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => handleTranslate('description')}
+                                    disabled={translating.description || !formData.description}
+                                    style={{ fontSize: '0.75rem', padding: '2px 8px', height: 'auto' }}
+                                >
+                                    {translating.description ? '翻訳中...' : '✨ AI翻訳 (台湾語)'}
+                                </button>
+                            </div>
                             <textarea
                                 name="description"
                                 className="form-input form-textarea"
