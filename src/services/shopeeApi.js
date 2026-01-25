@@ -247,3 +247,30 @@ export function getStatusBadge(status) {
     };
     return statusMap[status] || { label: status, className: 'badge-info' };
 }
+
+/**
+ * カテゴリー一覧を取得
+ */
+export async function getCategories(accessToken, shopId, language = 'ja') {
+    const response = await fetch(
+        `${API_BASE}/categories?access_token=${accessToken}&shop_id=${shopId}&language=${language}`
+    );
+    return await response.json();
+}
+
+/**
+ * 画像をアップロード
+ */
+export async function uploadImage(accessToken, shopId, file) {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const response = await fetch(
+        `${API_BASE}/upload?access_token=${accessToken}&shop_id=${shopId}`,
+        {
+            method: 'POST',
+            body: formData
+        }
+    );
+    return await response.json();
+}
