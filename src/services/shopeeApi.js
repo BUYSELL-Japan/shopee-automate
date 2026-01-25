@@ -97,6 +97,28 @@ export async function updateDbProduct(productData) {
 }
 
 /**
+ * Shopee APIに商品情報を更新
+ * @param {string} accessToken - アクセストークン
+ * @param {number} shopId - ショップID
+ * @param {number} itemId - 商品ID
+ * @param {object} updates - 更新内容 { item_name?, description?, price?, stock? }
+ */
+export async function updateShopeeProduct(accessToken, shopId, itemId, updates) {
+    const response = await fetch(`${API_BASE}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            access_token: accessToken,
+            shop_id: parseInt(shopId),
+            item_id: parseInt(itemId),
+            update_type: 'all',
+            ...updates
+        })
+    });
+    return await response.json();
+}
+
+/**
  * ShopeeデータをD1に同期
  */
 export async function syncProductsToDb(accessToken, shopId) {

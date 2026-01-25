@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { formatPrice } from '../services/shopeeApi'
+import { formatPrice, updateShopeeProduct, updateDbProduct } from '../services/shopeeApi'
 
 function ProductEdit() {
     const { id } = useParams()
@@ -90,28 +90,49 @@ function ProductEdit() {
         setIsSaving(true)
         setSaveMessage(null)
 
+        const itemId = product.item_id || product.id || id
+        const updates = {
+            item_name: formData.name,
+            description: formData.description,
+            price: parseFloat(formData.price) || 0,
+            stock: parseInt(formData.stock) || 0
+        }
+
         try {
-            // D1に保存
-            const response = await fetch('/api/db/products', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    item_id: product.item_id || product.id || id,
+            // 1. Shopee APIに送信（価格・在庫・商品情報）
+            const shopeeResult = await updateShopeeProduct(accessToken, shopId, itemId, updates)
+
+            if (shopeeResult.status === 'success' || shopeeResult.status === 'partial_error') {
+                // 2. D1にも保存
+                const d1Result = await updateDbProduct({
+                    item_id: parseInt(itemId),
                     shop_id: parseInt(shopId),
                     item_name: formData.name,
                     description: formData.description,
-                    current_price: parseFloat(formData.price) || 0,
-                    stock: parseInt(formData.stock) || 0,
+                    current_price: updates.price,
+                    stock: updates.stock,
                     notes: formData.notes
                 })
-            })
 
-            const result = await response.json()
-
-            if (result.status === 'success') {
-                setSaveMessage({ type: 'success', text: '✅ 保存しました！' })
+                if (shopeeResult.status === 'partial_error') {
+                    // 部分的に成功
+                    const errors = Object.entries(shopeeResult.data || {})
+                        .filter(([key, val]) => val?.error)
+                        .map(([key, val]) => `${key}: ${val.message || val.error}`)
+                        .join(', ')
+                    setSaveMessage({
+                        type: 'warning',
+                        text: `⚠️ Shopee一部更新失敗: ${errors}`
+                    })
+                } else {
+                    setSaveMessage({ type: 'success', text: '✅ ShopeeとD1に保存しました！' })
+                }
             } else {
-                setSaveMessage({ type: 'error', text: `❌ 保存エラー: ${result.message}` })
+                // Shopee APIエラー
+                setSaveMessage({
+                    type: 'error',
+                    text: `❌ Shopee更新エラー: ${shopeeResult.message}`
+                })
             }
         } catch (e) {
             setSaveMessage({ type: 'error', text: `❌ エラー: ${e.message}` })
