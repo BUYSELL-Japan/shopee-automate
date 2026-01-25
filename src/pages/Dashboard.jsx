@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { getProducts, getOrders, formatPrice, twdToJpy } from '../services/shopeeApi'
+import { getProducts, getOrders, formatPrice, twdToJpy, getStatusBadge } from '../services/shopeeApi'
 
 function Dashboard() {
     const [stats, setStats] = useState({
