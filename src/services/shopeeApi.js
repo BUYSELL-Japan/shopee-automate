@@ -274,3 +274,19 @@ export async function uploadImage(accessToken, shopId, file) {
     );
     return await response.json();
 }
+
+/**
+ * 商品を新規出品 (Shopee API)
+ */
+export async function addItem(accessToken, shopId, productData) {
+    const response = await fetch(`${API_BASE}/add_item`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            access_token: accessToken,
+            shop_id: parseInt(shopId),
+            ...productData
+        })
+    });
+    return await response.json();
+}

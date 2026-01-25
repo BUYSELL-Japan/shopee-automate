@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { getCategories, uploadImage } from '../services/shopeeApi'
+import { getCategories, uploadImage, addItem } from '../services/shopeeApi'
 
 // 推奨価格計算用の定数
 const COSTS = {
@@ -25,14 +25,15 @@ function NewProduct() {
         stock: '',
         category: '',
         sku: '',
-        weight: '1',
-        images: [] // { id: string, url: string }[]
+        weight: '0.5',
+        images: [] // { id: string, url: string, preview: string, file: File, status: 'uploading'|'done'|'error' }[]
     })
 
     // UI状態
     const [categories, setCategories] = useState([])
     const [isLoadingCategories, setIsLoadingCategories] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
+    const [isSubmitting, setIsSubmitting] = useState(false)
     const [translating, setTranslating] = useState({ name: false, description: false })
     const [priceDetails, setPriceDetails] = useState(null)
 
@@ -43,7 +44,19 @@ function NewProduct() {
             getCategories(accessToken, shopId)
                 .then(result => {
                     if (result.response && result.response.category_list) {
-                        setCategories(result.response.category_list)
+                        const allCats = result.response.category_list
+                        // フィギュア関連を優先的に表示
+                        const figureCats = allCats.filter(c =>
+                            /Figure|Toy|Hobby|公仔|模型/i.test(c.display_category_name)
+                        )
+                        const otherCats = allCats.filter(c =>
+                            !/Figure|Toy|Hobby|公仔|模型/i.test(c.display_category_name)
+                        )
+                        // フィギュアがあればデフォルト選択
+                        if (figureCats.length > 0 && !formData.category) {
+                            setFormData(prev => ({ ...prev, category: figureCats[0].category_id }))
+                        }
+                        setCategories([...figureCats, ...otherCats])
                     }
                 })
                 .catch(err => console.error('Category fetch error:', err))
@@ -66,7 +79,6 @@ function NewProduct() {
             // TWD換算
             const recommendedPriceTwd = Math.ceil(recommendedPriceJpy / COSTS.TWD_JPY_RATE)
 
-            // 詳細情報を作成
             setPriceDetails({
                 baseCost: cost,
                 shippingJpy: COSTS.YAMATO_JPY,
@@ -77,7 +89,7 @@ function NewProduct() {
                 finalTwd: recommendedPriceTwd
             })
 
-            // 販売価格にセット (手動変更も可能)
+            // 自動入力
             setFormData(prev => ({ ...prev, price: recommendedPriceTwd }))
         } else {
             setPriceDetails(null)
@@ -119,19 +131,48 @@ function NewProduct() {
         if (files.length === 0) return
 
         setIsUploading(true)
+
+        // まずプレビュー表示用にオブジェクト作成
+        const newImages = files.map(file => ({
+            file,
+            preview: URL.createObjectURL(file), // 即時プレビュー
+            id: null,
+            url: null,
+            status: 'uploading'
+        }))
+
+        setFormData(prev => ({
+            ...prev,
+            images: [...prev.images, ...newImages]
+        }))
+
         try {
-            for (const file of files) {
-                // Shopee APIへアップロード
-                const result = await uploadImage(accessToken, shopId, file)
-                if (result.response && result.response.image_info) {
-                    const { image_id, image_url } = result.response.image_info
-                    setFormData(prev => ({
-                        ...prev,
-                        images: [...prev.images, { id: image_id, url: image_url }]
-                    }))
-                } else {
-                    console.error('Upload failed:', result)
-                    alert(`画像のアップロードに失敗しました: ${file.name}`)
+            // 順次アップロード
+            const updatedImages = [...formData.images, ...newImages]
+            // 新しく追加された画像のインデックス範囲
+            const startIndex = formData.images.length
+
+            for (let i = startIndex; i < updatedImages.length; i++) {
+                const img = updatedImages[i]
+                if (img.status === 'uploading' && img.file) {
+                    try {
+                        const result = await uploadImage(accessToken, shopId, img.file)
+                        if (result.response && result.response.image_info) {
+                            updatedImages[i] = {
+                                ...img,
+                                id: result.response.image_info.image_id,
+                                url: result.response.image_info.image_url,
+                                status: 'done'
+                            }
+                            setFormData(prev => ({ ...prev, images: [...updatedImages] }))
+                        } else {
+                            updatedImages[i] = { ...img, status: 'error' }
+                            setFormData(prev => ({ ...prev, images: [...updatedImages] }))
+                        }
+                    } catch (e) {
+                        updatedImages[i] = { ...img, status: 'error' }
+                        setFormData(prev => ({ ...prev, images: [...updatedImages] }))
+                    }
                 }
             }
         } catch (err) {
@@ -149,11 +190,55 @@ function NewProduct() {
         }))
     }
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault()
-        // TODO: 商品登録API呼び出し
-        console.log('Submit:', formData)
-        alert('商品登録APIはまだ実装されていません')
+        if (isSubmitting) return
+
+        // バリデーション
+        if (!formData.category) {
+            alert('カテゴリを選択してください')
+            return
+        }
+
+        const validImages = formData.images.filter(img => img.status === 'done' && img.id)
+        if (validImages.length === 0) {
+            alert('画像を少なくとも1枚アップロードしてください（アップロード待ちの場合は完了までお待ちください）')
+            return
+        }
+
+        setIsSubmitting(true)
+
+        try {
+            const imageIdList = validImages.map(img => img.id)
+
+            const payload = {
+                item_name: formData.name,
+                description: formData.description,
+                original_price: parseFloat(formData.price),
+                normal_stock: parseInt(formData.stock),
+                category_id: parseInt(formData.category),
+                weight: parseFloat(formData.weight),
+                image: {
+                    image_id_list: imageIdList
+                },
+                logistic_info: [] // 物流設定（空配列の場合はショップデフォルトが適用されるか要確認だが必須項目）
+            }
+
+            const result = await addItem(accessToken, shopId, payload)
+
+            if (result.error) {
+                alert(`出品エラー: ${result.message || result.error}\n(詳細なエラーはコンソールを確認してください)`)
+                console.error("Add Item Error:", result)
+            } else {
+                alert('✅ 出品に成功しました！')
+                navigate('/products')
+            }
+        } catch (e) {
+            alert(`出品エラー: ${e.message}`)
+            console.error(e)
+        } finally {
+            setIsSubmitting(false)
+        }
     }
 
     return (
@@ -235,9 +320,9 @@ function NewProduct() {
                                     <option value="">
                                         {isLoadingCategories ? '読み込み中...' : 'カテゴリを選択'}
                                     </option>
-                                    {/* APIから取得したカテゴリを表示 */}
                                     {categories.map((cat) => (
                                         <option key={cat.category_id} value={cat.category_id}>
+                                            {/Figure|Toy|Hobby|公仔|模型/i.test(cat.display_category_name) ? '★ ' : ''}
                                             {cat.display_category_name}
                                         </option>
                                     ))}
@@ -333,7 +418,7 @@ function NewProduct() {
                                     type="number"
                                     name="weight"
                                     className="form-input"
-                                    placeholder="1.0"
+                                    placeholder="0.5"
                                     min="0"
                                     step="0.1"
                                     value={formData.weight}
@@ -386,18 +471,46 @@ function NewProduct() {
                                 marginTop: 'var(--spacing-lg)'
                             }}>
                                 {formData.images.map((img, index) => (
-                                    <div key={img.id || index} style={{ position: 'relative', aspectRatio: '1' }}>
+                                    <div key={index} style={{ position: 'relative', aspectRatio: '1' }}>
+                                        {/* プレビュー表示 */}
                                         <img
-                                            src={img.url}
+                                            src={img.preview || img.url}
                                             alt={`商品画像 ${index + 1}`}
                                             style={{
                                                 width: '100%',
                                                 height: '100%',
                                                 objectFit: 'cover',
                                                 borderRadius: 'var(--radius-md)',
-                                                border: '1px solid var(--color-border)'
+                                                border: '1px solid var(--color-border)',
+                                                opacity: img.status === 'uploading' ? 0.5 : 1
                                             }}
                                         />
+                                        {img.status === 'uploading' && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                inset: 0,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '20px'
+                                            }}>
+                                                🔄
+                                            </div>
+                                        )}
+                                        {img.status === 'error' && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                inset: 0,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                background: 'rgba(255,0,0,0.2)',
+                                                color: 'red',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                !
+                                            </div>
+                                        )}
                                         <button
                                             type="button"
                                             onClick={() => removeImage(index)}
@@ -437,11 +550,16 @@ function NewProduct() {
                             type="button"
                             className="btn btn-secondary"
                             onClick={() => navigate('/products')}
+                            disabled={isSubmitting}
                         >
                             キャンセル
                         </button>
-                        <button type="submit" className="btn btn-primary btn-lg">
-                            🚀 出品する
+                        <button
+                            type="submit"
+                            className="btn btn-primary btn-lg"
+                            disabled={isSubmitting || isUploading}
+                        >
+                            {isSubmitting ? '出品中...' : '🚀 出品する'}
                         </button>
                     </div>
                 </form>
