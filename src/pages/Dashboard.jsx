@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { getProducts, getOrders, formatPrice, getStatusBadge } from '../services/shopeeApi'
+import { getProducts, getOrders, formatPrice, twdToJpy } from '../services/shopeeApi'
 
 function Dashboard() {
     const [stats, setStats] = useState({
@@ -159,6 +159,9 @@ function Dashboard() {
                         <div className="stat-label">総売上（30日間）</div>
                         <div className="stat-value">
                             {isLoading ? '...' : formatPrice(stats.totalSales, 'TWD')}
+                        </div>
+                        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                            {isLoading ? '' : `¥${twdToJpy(stats.totalSales || 0).toLocaleString()}`}
                         </div>
                     </div>
                 </div>

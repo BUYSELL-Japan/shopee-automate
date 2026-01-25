@@ -29,6 +29,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const shopId = url.searchParams.get("shop_id");
     const offset = parseInt(url.searchParams.get("offset") || "0");
     const pageSize = parseInt(url.searchParams.get("page_size") || "20");
+    const itemId = url.searchParams.get("item_id"); // 個別商品取得用
 
     if (!accessToken || !shopId) {
         return new Response(JSON.stringify({
@@ -46,6 +47,64 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
         if (!partnerId || !partnerKey) {
             throw new Error("環境変数が設定されていません");
+        }
+
+        // item_idが指定された場合は個別商品を取得
+        if (itemId) {
+            const itemInfo = await getItemBaseInfo(
+                partnerId,
+                partnerKey,
+                accessToken,
+                parseInt(shopId),
+                [parseInt(itemId)]
+            );
+
+            if (itemInfo.error) {
+                return new Response(JSON.stringify({
+                    status: "error",
+                    message: itemInfo.message || itemInfo.error,
+                    data: itemInfo
+                }), {
+                    status: 400,
+                    headers: { "Content-Type": "application/json", ...getCorsHeaders() },
+                });
+            }
+
+            let products = [];
+            if (itemInfo.response?.item_list && itemInfo.response.item_list.length > 0) {
+                products = itemInfo.response.item_list.map((item: any) => ({
+                    id: item.item_id,
+                    item_id: item.item_id,
+                    name: item.item_name,
+                    description: item.description || "",
+                    price: item.price_info?.[0]?.current_price || 0,
+                    originalPrice: item.price_info?.[0]?.original_price || 0,
+                    currency: item.price_info?.[0]?.currency || "TWD",
+                    stock: item.stock_info_v2?.summary_info?.total_available_stock || 0,
+                    status: mapItemStatus(item.item_status),
+                    image: item.image?.image_url_list?.[0] || null,
+                    images: item.image?.image_url_list || [],
+                    category_id: item.category_id,
+                    sold: item.sold || 0,
+                    views: item.views || 0,
+                    likes: item.likes || 0,
+                    rating_star: item.rating_star || 0,
+                    create_time: item.create_time,
+                    update_time: item.update_time,
+                }));
+            }
+
+            return new Response(JSON.stringify({
+                status: "success",
+                message: "商品を取得しました",
+                data: {
+                    products: products,
+                    total: products.length,
+                }
+            }), {
+                status: 200,
+                headers: { "Content-Type": "application/json", ...getCorsHeaders() },
+            });
         }
 
         // 商品一覧を取得
@@ -84,6 +143,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             if (itemInfo.response?.item_list) {
                 products = itemInfo.response.item_list.map((item: any) => ({
                     id: item.item_id,
+                    item_id: item.item_id,
                     name: item.item_name,
                     description: item.description,
                     price: item.price_info?.[0]?.current_price || 0,
