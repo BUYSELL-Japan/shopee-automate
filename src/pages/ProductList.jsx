@@ -6,6 +6,7 @@ import { getProducts, getDbProducts, syncProductsToDb, formatPrice, getStatusBad
 function ProductList() {
     const [searchTerm, setSearchTerm] = useState('')
     const [statusFilter, setStatusFilter] = useState('all')
+    const [stockFilter, setStockFilter] = useState('all') // 在庫フィルタ
     const [products, setProducts] = useState([])
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState(null)
@@ -145,7 +146,16 @@ function ProductList() {
     const filteredProducts = products.filter((product) => {
         const matchesSearch = product.name?.toLowerCase().includes(searchTerm.toLowerCase())
         const matchesStatus = statusFilter === 'all' || product.status === statusFilter
-        return matchesSearch && matchesStatus
+        // 在庫フィルタ
+        let matchesStock = true
+        if (stockFilter === 'zero') {
+            matchesStock = (product.stock || 0) === 0
+        } else if (stockFilter === 'low') {
+            matchesStock = (product.stock || 0) > 0 && (product.stock || 0) <= 5
+        } else if (stockFilter === 'available') {
+            matchesStock = (product.stock || 0) > 0
+        }
+        return matchesSearch && matchesStatus && matchesStock
     })
 
     // 未接続時のUI
@@ -271,6 +281,18 @@ function ProductList() {
                             <option value="active">出品中</option>
                             <option value="inactive">非公開</option>
                             <option value="banned">停止</option>
+                        </select>
+                    </div>
+                    <div className="form-group" style={{ minWidth: '150px', marginBottom: 0 }}>
+                        <select
+                            className="form-input form-select"
+                            value={stockFilter}
+                            onChange={(e) => setStockFilter(e.target.value)}
+                        >
+                            <option value="all">すべての在庫</option>
+                            <option value="zero">在庫0のみ</option>
+                            <option value="low">在庫少（1-5）</option>
+                            <option value="available">在庫あり</option>
                         </select>
                     </div>
                 </div>

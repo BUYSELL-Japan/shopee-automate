@@ -7,6 +7,7 @@ import ProductEdit from './pages/ProductEdit'
 import NewProduct from './pages/NewProduct'
 import BulkUpload from './pages/BulkUpload'
 import Orders from './pages/Orders'
+import ProfitCalculator from './pages/ProfitCalculator'
 import Settings from './pages/Settings'
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
                     <Route path="/products/new" element={<NewProduct />} />
                     <Route path="/bulk-upload" element={<BulkUpload />} />
                     <Route path="/orders" element={<Orders />} />
+                    <Route path="/profit" element={<ProfitCalculator />} />
                     <Route path="/settings" element={<Settings />} />
                 </Routes>
             </main>

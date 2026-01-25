@@ -174,7 +174,8 @@ async function getItemBaseInfo(
     const sign = await hmacSha256(partnerKey, baseString);
 
     const itemIdList = itemIds.join(",");
-    const apiUrl = `${SHOPEE_HOST}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${sign}&access_token=${accessToken}&shop_id=${shopId}&item_id_list=${itemIdList}`;
+    // need_descriptionを追加してDescriptionを取得可能に
+    const apiUrl = `${SHOPEE_HOST}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${sign}&access_token=${accessToken}&shop_id=${shopId}&item_id_list=${itemIdList}&need_tax_info=false&need_complaint_policy=false`;
 
     const response = await fetch(apiUrl, {
         method: "GET",

@@ -7,6 +7,7 @@ function Sidebar() {
         { path: '/products/new', icon: '➕', label: '新規出品' },
         { path: '/bulk-upload', icon: '📤', label: '一括出品' },
         { path: '/orders', icon: '🛒', label: '注文管理' },
+        { path: '/profit', icon: '💰', label: '利益計算' },
     ]
 
     const settingsItems = [

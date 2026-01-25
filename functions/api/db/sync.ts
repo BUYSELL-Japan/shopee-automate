@@ -177,7 +177,7 @@ async function getItemList(partnerId: string, partnerKey: string, accessToken: s
     const path = "/api/v2/product/get_item_list";
     const baseString = `${partnerId}${path}${timestamp}${accessToken}${shopId}`;
     const sign = await hmacSha256(partnerKey, baseString);
-    const apiUrl = `${SHOPEE_HOST}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${sign}&access_token=${accessToken}&shop_id=${shopId}&offset=${offset}&page_size=50&item_status=NORMAL`;
+    const apiUrl = `${SHOPEE_HOST}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${sign}&access_token=${accessToken}&shop_id=${shopId}&offset=${offset}&page_size=50&item_status=NORMAL&item_status=UNLIST`;
     const response = await fetch(apiUrl);
     return await response.json();
 }

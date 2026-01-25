@@ -167,6 +167,46 @@ export function formatPrice(price, currency = 'TWD') {
 }
 
 /**
+ * TWDから日本円への変換レート（固定レート使用、実際は為替APIで取得推奨）
+ * 1 TWD ≈ 4.5 JPY (2024年レート目安)
+ */
+const TWD_TO_JPY_RATE = 4.5;
+
+/**
+ * NT$と日本円の両方を表示
+ */
+export function formatPriceWithJPY(price, currency = 'TWD') {
+    const numPrice = parseFloat(price) || 0;
+
+    if (currency === 'TWD') {
+        const ntdStr = `NT$${numPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+        const jpyValue = Math.round(numPrice * TWD_TO_JPY_RATE);
+        const jpyStr = `¥${jpyValue.toLocaleString('ja-JP')}`;
+        return { ntd: ntdStr, jpy: jpyStr, combined: `${ntdStr} (${jpyStr})` };
+    }
+
+    const formatted = new Intl.NumberFormat('ja-JP', {
+        style: 'currency',
+        currency: currency
+    }).format(numPrice);
+    return { ntd: formatted, jpy: formatted, combined: formatted };
+}
+
+/**
+ * 日本円からNT$への変換
+ */
+export function jpyToTwd(jpyAmount) {
+    return Math.round(jpyAmount / TWD_TO_JPY_RATE);
+}
+
+/**
+ * NT$から日本円への変換
+ */
+export function twdToJpy(twdAmount) {
+    return Math.round(twdAmount * TWD_TO_JPY_RATE);
+}
+
+/**
  * ステータスバッジを取得
  */
 export function getStatusBadge(status) {
