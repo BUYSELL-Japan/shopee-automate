@@ -189,6 +189,39 @@ export function useShopeeAuth() {
         saveAuth({ accessToken, refreshToken });
     }, [saveAuth]);
 
+    // 認証コードを交換（フロントエンド認証フロー用）
+    const exchangeFullAuth = useCallback(async (code, shopId) => {
+        setIsLoading(true);
+        try {
+            const response = await fetch('/api/shopee/exchange', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, shop_id: parseInt(shopId) })
+            });
+            const result = await response.json();
+
+            if (result.status === 'success' && result.data?.access_token) {
+                const d1Auth = {
+                    accessToken: result.data.access_token,
+                    refreshToken: result.data.refresh_token || '',
+                    shopId: String(result.data.shop_id),
+                    shopName: '', // 後で更新
+                    isConnected: true,
+                    lastTested: new Date().toISOString(),
+                    source: 'd1'
+                };
+                setAuthState(d1Auth);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(d1Auth));
+                return { success: true };
+            }
+            return { success: false, error: result.message || 'Authentication failed' };
+        } catch (e) {
+            return { success: false, error: e.message };
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
     // D1からトークンを読み込み
     const loadFromD1 = useCallback(async (shopId) => {
         setIsLoading(true);
@@ -237,6 +270,7 @@ export function useShopeeAuth() {
         updateTokens,
         saveAuth,
         refreshToken: () => refreshTokenFromD1(authState.shopId),
-        loadFromD1
+        loadFromD1,
+        exchangeFullAuth
     };
 }

@@ -1,6 +1,33 @@
-import { NavLink } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { useShopeeAuth } from '../hooks/useShopeeAuth'
 
 function Sidebar() {
+    const location = useLocation()
+    const navigate = useNavigate()
+    const { exchangeFullAuth } = useShopeeAuth()
+
+    // 認証コールバック処理
+    useEffect(() => {
+        const params = new URLSearchParams(location.search)
+        const code = params.get('code')
+        const shopId = params.get('shop_id')
+
+        if (code && shopId) {
+            const handleAuth = async () => {
+                const result = await exchangeFullAuth(code, shopId)
+                if (result.success) {
+                    // 成功したらパラメータを削除してリダイレクト
+                    navigate('/settings', { replace: true })
+                    alert('Shopeeとの接続に成功しました！')
+                } else {
+                    alert('接続エラー: ' + result.error)
+                }
+            }
+            handleAuth()
+        }
+    }, [location.search, exchangeFullAuth, navigate])
+
     const navItems = [
         { path: '/', icon: '📊', label: 'ダッシュボード' },
         { path: '/products', icon: '📦', label: '商品一覧' },
