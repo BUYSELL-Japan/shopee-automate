@@ -23,7 +23,7 @@ function NewProduct() {
         price: '', // 販売価格 (TWD)
         costPrice: '', // 原価 (JPY)
         stock: '',
-        category: '',
+        category: '11041647', // デフォルト: アクションフィギュア
         sku: '',
         weight: '0.5',
         images: [] // { id: string, url: string, preview: string, file: File, status: 'uploading'|'done'|'error' }[]
@@ -45,18 +45,24 @@ function NewProduct() {
                 .then(result => {
                     if (result.response && result.response.category_list) {
                         const allCats = result.response.category_list
+                        // 特定のID (11041647) を検索
+                        const defaultCat = allCats.find(c => c.category_id === 11041647)
+
                         // フィギュア関連を優先的に表示
                         const figureCats = allCats.filter(c =>
-                            /Figure|Toy|Hobby|公仔|模型/i.test(c.display_category_name)
+                            /Figure|Toy|Hobby|公仔|模型/i.test(c.display_category_name) || c.category_id === 11041647
                         )
-                        const otherCats = allCats.filter(c =>
-                            !/Figure|Toy|Hobby|公仔|模型/i.test(c.display_category_name)
-                        )
-                        // フィギュアがあればデフォルト選択
-                        if (figureCats.length > 0 && !formData.category) {
-                            setFormData(prev => ({ ...prev, category: figureCats[0].category_id }))
-                        }
+                        // 重複排除のためのSet
+                        const figureIds = new Set(figureCats.map(c => c.category_id))
+                        const otherCats = allCats.filter(c => !figureIds.has(c.category_id))
+
                         setCategories([...figureCats, ...otherCats])
+
+                        // カテゴリが未設定またはデフォルトのままの場合、名前解決できればそのまま、
+                        // もし初期値のIDがリストになくても、APIリクエストではIDがあれば通る可能性が高いので維持
+                        if (!formData.category && defaultCat) {
+                            setFormData(prev => ({ ...prev, category: defaultCat.category_id }))
+                        }
                     }
                 })
                 .catch(err => console.error('Category fetch error:', err))
