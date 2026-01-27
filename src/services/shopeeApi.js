@@ -56,6 +56,16 @@ export async function getItemDetail(accessToken, shopId, itemId) {
 }
 
 /**
+ * カテゴリの属性情報を取得
+ */
+export async function getAttributes(accessToken, shopId, categoryId, language = 'zh-Hant') {
+    const response = await fetch(
+        `${API_BASE}/attributes?access_token=${accessToken}&shop_id=${shopId}&category_id=${categoryId}&language=${language}`
+    );
+    return await response.json();
+}
+
+/**
  * 注文一覧を取得
  */
 export async function getOrders(accessToken, shopId, options = {}) {

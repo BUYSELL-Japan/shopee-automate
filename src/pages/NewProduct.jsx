@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { getCategories, uploadImage, addItem, getLogistics, getProducts, getItemDetail } from '../services/shopeeApi'
+import { getCategories, uploadImage, addItem, getLogistics, getProducts, getItemDetail, getAttributes } from '../services/shopeeApi'
 
 // 推奨価格計算用の定数
 const COSTS = {
@@ -23,15 +23,23 @@ function NewProduct() {
         price: '', // 販売価格 (TWD)
         costPrice: '', // 原価 (JPY)
         stock: '',
-        category: '101385', // デフォルト: ユーザー指定のカテゴリーID
+        category: '101385', // デフォルト: ユーザー指定
+        brandId: '', // ブランドID (選択式)
         sku: '',
         weight: '0.5',
-        images: [] // { id: string, url: string, preview: string, file: File, status: 'uploading'|'done'|'error' }[]
+        images: []
     })
 
     // UI状態
     const [categories, setCategories] = useState([])
     const [logistics, setLogistics] = useState([])
+
+    // ブランド関連
+    const [brandAttributeId, setBrandAttributeId] = useState(null)
+    const [brandOptions, setBrandOptions] = useState([])
+    const [isLoadingBrands, setIsLoadingBrands] = useState(false)
+
+    // その他UI
     const [isLoadingCategories, setIsLoadingCategories] = useState(false)
     const [detectedCategory, setDetectedCategory] = useState(null)
     const [isUploading, setIsUploading] = useState(false)
@@ -65,14 +73,13 @@ function NewProduct() {
                     const defaultId = 101385
                     const defaultCatExists = allCats.find(c => c.category_id === defaultId)
                     if (!defaultCatExists) {
-                        // リストになければ強制追加
                         allCats.unshift({
                             category_id: defaultId,
                             display_category_name: `Action Figure (Default ID: ${defaultId})`
                         })
                     }
 
-                    // 既存商品から有効IDを探す (自動検出)
+                    // 既存商品から有効IDを探す
                     let foundId = null
                     if (prodResult.response && prodResult.response.item_list) {
                         const items = prodResult.response.item_list
@@ -86,7 +93,7 @@ function NewProduct() {
                         }
                     }
 
-                    // リスト表示用フィルタ
+                    // 表示用リスト構築
                     const figureKeywords = /Figure|Toy|Hobby|Action Figure|公仔|模型|手辦/i
                     const figureCats = allCats.filter(c => figureKeywords.test(c.display_category_name) || c.category_id === defaultId)
                     const otherCats = allCats.filter(c => !figureKeywords.test(c.display_category_name) && c.category_id !== defaultId)
@@ -100,14 +107,8 @@ function NewProduct() {
 
                     setCategories(allCats)
 
-                    // IDセット優先順位: 既にセットされている値(デフォルト) > 検出ID > フィギュアリスト先頭
-                    // 今回はユーザー指定の 101385 をデフォルト値にしているので初期化ロジックは控えめに
                     if (!formData.category) {
-                        if (foundId) {
-                            setFormData(prev => ({ ...prev, category: foundId }))
-                        } else {
-                            setFormData(prev => ({ ...prev, category: defaultId }))
-                        }
+                        setFormData(prev => ({ ...prev, category: defaultId }))
                     }
                 })
                 .catch(err => console.error('Data fetch error:', err))
@@ -123,6 +124,54 @@ function NewProduct() {
                 .catch(err => console.error('Logistics fetch error:', err))
         }
     }, [isConnected, accessToken, shopId])
+
+    // ブランド情報の取得 (カテゴリ変更時に発火)
+    useEffect(() => {
+        if (!formData.category || !accessToken || !shopId) return;
+
+        setIsLoadingBrands(true)
+        setBrandOptions([])
+        setBrandAttributeId(null)
+        setFormData(prev => ({ ...prev, brandId: '' })) // リセット
+
+        getAttributes(accessToken, shopId, parseInt(formData.category))
+            .then(result => {
+                if (result.response && result.response.attribute_list) {
+                    // Brand属性を探す (Mandatory: true かつ名前にBrandが含まれる、または特定の主要属性)
+                    // 日本語/英語/中国語対応のためキーワード検索
+                    const attrs = result.response.attribute_list;
+                    console.log("Category Attributes:", attrs);
+
+                    const brandAttr = attrs.find(a =>
+                        /Brand|品牌|メーカー/i.test(a.display_attribute_name) || a.mandatory
+                    );
+
+                    if (brandAttr) {
+                        setBrandAttributeId(brandAttr.attribute_id);
+                        if (brandAttr.attribute_value_list) {
+                            setBrandOptions(brandAttr.attribute_value_list);
+
+                            // コンソールに主要ブランドIDを出力（デバッグ用）
+                            const targets = ['BANPRESTO', 'SEGA', 'Bandai', 'Taito', 'Furyu', 'Good Smile', 'Kotobukiya', 'MegaHouse'];
+                            console.log("--- Brand IDs Check ---");
+                            targets.forEach(t => {
+                                const found = brandAttr.attribute_value_list.find(v => v.display_value_name.toLowerCase().includes(t.toLowerCase()));
+                                if (found) {
+                                    console.log(`✅ ${t}: ${found.value_id} (${found.display_value_name})`);
+                                } else {
+                                    console.log(`❌ ${t}: Not found in current list`);
+                                }
+                            });
+                            console.log("-----------------------");
+                        }
+                    }
+                }
+            })
+            .catch(err => console.error('Attribute fetch error:', err))
+            .finally(() => setIsLoadingBrands(false))
+
+    }, [formData.category, accessToken, shopId]);
+
 
     // 価格計算ロジック
     useEffect(() => {
@@ -192,9 +241,10 @@ function NewProduct() {
                         return prev
                     })
                     setDetectedCategory({ id: item.category_id, name: `(コピー元: ${item.item_name.substring(0, 10)}...)` })
-                    alert(`既存商品からカテゴリID: ${item.category_id} を取得・設定しました！此のIDで出品します。`)
-                } else {
-                    alert('指定された商品のカテゴリID情報を取得できませんでした。')
+
+                    // カテゴリに合わせて属性も再取得されるが、既存商品のAttribute値も取得できればセットしたい
+                    // しかしitem_detailにはattribute詳細が含まれない場合がある (get_item_extra_infoが必要かも)
+                    alert(`既存商品からカテゴリID: ${item.category_id} を取得しました。\n(属性情報は手動で選択してください)`)
                 }
             } else {
                 alert('商品情報の取得に失敗しました。IDが正しいか確認してください。')
@@ -267,6 +317,12 @@ function NewProduct() {
             return
         }
 
+        // ブランド必須チェック (もし属性が読み込まれていて必須なら)
+        if (brandAttributeId && !formData.brandId) {
+            alert('ブランドを選択してください')
+            return
+        }
+
         const validImages = formData.images.filter(img => img.status === 'done' && img.id)
         if (validImages.length === 0) {
             alert('画像を少なくとも1枚アップロードしてください')
@@ -282,6 +338,15 @@ function NewProduct() {
                 .map(l => ({ logistic_id: l.logistic_id, enabled: true }))
             const finalPrice = parseFloat(formData.price)
 
+            // 属性リスト構築
+            const attributes = []
+            if (brandAttributeId && formData.brandId) {
+                attributes.push({
+                    attribute_id: brandAttributeId,
+                    attribute_value_list: [{ value_id: parseInt(formData.brandId) }]
+                })
+            }
+
             const payload = {
                 item_name: formData.name,
                 description: formData.description,
@@ -292,14 +357,14 @@ function NewProduct() {
                 weight: parseFloat(formData.weight),
                 image: { image_id_list: imageIdList },
                 logistic_info: logisticInfoPayload,
-                attribute_list: []
+                attribute_list: attributes
             }
 
             console.log("Submitting payload:", payload)
             const result = await addItem(accessToken, shopId, payload)
 
             if (result.error) {
-                alert(`出品エラー: ${result.message || result.error}\n\n(詳細エラーを確認してください)`)
+                alert(`出品エラー: ${result.message || result.error}\n\n(詳細: ${JSON.stringify(result.response || {})})`)
                 console.error("Add Item Error:", result)
             } else {
                 alert('✅ 出品に成功しました！')
@@ -312,6 +377,23 @@ function NewProduct() {
             setIsSubmitting(false)
         }
     }
+
+    // 主要ブランドを上に表示するためのフィルタ
+    const popularBrands = [
+        'BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'
+    ];
+    // 並び替え: 主要ブランド -> その他 (五十音順)
+    const sortedBrandOptions = [...brandOptions].sort((a, b) => {
+        const aName = a.display_value_name;
+        const bName = b.display_value_name;
+        const aPopIndex = popularBrands.findIndex(p => aName.toLowerCase().includes(p.toLowerCase()));
+        const bPopIndex = popularBrands.findIndex(p => bName.toLowerCase().includes(p.toLowerCase()));
+
+        if (aPopIndex !== -1 && bPopIndex !== -1) return aPopIndex - bPopIndex;
+        if (aPopIndex !== -1) return -1;
+        if (bPopIndex !== -1) return 1;
+        return aName.localeCompare(bName);
+    });
 
     return (
         <div className="page-container animate-fade-in">
@@ -332,65 +414,36 @@ function NewProduct() {
                         <div className="card">
                             <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
 
-                            {/* 既存商品からコピー UI */}
                             <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--color-border)' }}>
                                 <label style={{ fontSize: '0.85em', fontWeight: 600, marginBottom: '8px', display: 'block', color: 'var(--color-text-secondary)' }}>
-                                    🔧 既存の商品IDから設定をコピー (デバッグ用)
+                                    🔧 既存の商品IDからコピー
                                 </label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
-                                    <input
-                                        type="text"
-                                        className="form-input"
-                                        style={{ height: '36px', fontSize: '13px' }}
-                                        placeholder="Item ID (例: 47000206128)"
-                                        value={sourceItemId}
-                                        onChange={(e) => setSourceItemId(e.target.value)}
-                                    />
-                                    <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        style={{ height: '36px', padding: '0 16px', fontSize: '13px', whiteSpace: 'nowrap' }}
-                                        onClick={handleFetchSourceItem}
-                                        disabled={isFetchingSource}
-                                    >
+                                    <input type="text" className="form-input" style={{ height: '36px', fontSize: '13px' }} placeholder="Item ID" value={sourceItemId} onChange={(e) => setSourceItemId(e.target.value)} />
+                                    <button type="button" className="btn btn-secondary" style={{ height: '36px', padding: '0 16px', fontSize: '13px', whiteSpace: 'nowrap' }} onClick={handleFetchSourceItem} disabled={isFetchingSource}>
                                         {isFetchingSource ? '取得中...' : 'カテゴリ取得'}
                                     </button>
                                 </div>
-                                <p style={{ fontSize: '0.75em', marginTop: '6px', color: 'var(--color-text-secondary)' }}>
-                                    指定した商品のカテゴリーIDを取得して自動セットします
-                                </p>
                             </div>
 
                             <div className="form-group">
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                    <label className="form-label" style={{ marginBottom: 0 }}>商品名 *</label>
-                                    <button
-                                        type="button"
-                                        className="btn btn-ghost btn-sm"
-                                        onClick={() => handleTranslate('name')}
-                                        disabled={translating.name || !formData.name}
-                                        style={{ fontSize: '0.75rem', padding: '2px 8px', height: 'auto' }}
-                                    >
-                                        {translating.name ? '翻訳中...' : '✨ AI翻訳 (台湾語)'}
-                                    </button>
-                                </div>
+                                <label className="form-label">商品名 *</label>
                                 <input type="text" name="name" className="form-input" placeholder="日本語で入力してAI翻訳できます" value={formData.name} onChange={handleChange} required />
+                                <div style={{ marginTop: '4px', textAlign: 'right' }}>
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('name')} disabled={translating.name || !formData.name}>
+                                        {translating.name ? '翻訳中...' : '✨ AI翻訳'}
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="form-group">
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                    <label className="form-label" style={{ marginBottom: 0 }}>商品説明</label>
-                                    <button
-                                        type="button"
-                                        className="btn btn-ghost btn-sm"
-                                        onClick={() => handleTranslate('description')}
-                                        disabled={translating.description || !formData.description}
-                                        style={{ fontSize: '0.75rem', padding: '2px 8px', height: 'auto' }}
-                                    >
-                                        {translating.description ? '翻訳中...' : '✨ AI翻訳 (台湾語)'}
+                                <label className="form-label">商品説明</label>
+                                <textarea name="description" className="form-input form-textarea" placeholder="日本語で詳細を入力..." value={formData.description} onChange={handleChange} />
+                                <div style={{ marginTop: '4px', textAlign: 'right' }}>
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('description')} disabled={translating.description || !formData.description}>
+                                        {translating.description ? '翻訳中...' : '✨ AI翻訳'}
                                     </button>
                                 </div>
-                                <textarea name="description" className="form-input form-textarea" placeholder="日本語で詳細を入力..." value={formData.description} onChange={handleChange} />
                             </div>
 
                             <div className="form-group">
@@ -404,116 +457,103 @@ function NewProduct() {
                                         <option key={cat.category_id} value={cat.category_id}>
                                             {cat.category_id === 101385 ? '◎ ' : /Figure|Toy|Hobby|公仔|模型/i.test(cat.display_category_name) ? '★ ' : ''}
                                             {cat.display_category_name}
-                                            {detectedCategory && cat.category_id === detectedCategory.id ? ' (推奨)' : ''}
                                         </option>
                                     ))}
                                 </select>
                             </div>
+
+                            {/* ブランド選択UI */}
+                            <div className="form-group">
+                                <label className="form-label">
+                                    ブランド (Brand) *
+                                    {isLoadingBrands && <span style={{ fontSize: '0.8em', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>読み込み中...</span>}
+                                </label>
+                                {brandOptions.length > 0 ? (
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            list="brand-options"
+                                            name="brandId"
+                                            className="form-input"
+                                            placeholder="ブランドを検索または選択..."
+                                            value={formData.brandId}
+                                            onChange={handleChange}
+                                            onFocus={(e) => e.target.value = ''} // フォーカス時にクリアして全リスト表示しやすくする
+                                        />
+                                        <datalist id="brand-options">
+                                            {sortedBrandOptions.map((opt) => (
+                                                <option key={opt.value_id} value={opt.value_id}>
+                                                    {opt.display_value_name} {popularBrands.some(p => opt.display_value_name.includes(p)) ? '★' : ''}
+                                                </option>
+                                            ))}
+                                        </datalist>
+                                        <div style={{ fontSize: '0.8em', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                                            ※リストから選択するとID ({formData.brandId}) がセットされます
+                                            {formData.brandId && brandOptions.find(o => o.value_id == formData.brandId) &&
+                                                <span style={{ color: 'var(--color-success)', marginLeft: '8px' }}>
+                                                    選択中: {brandOptions.find(o => o.value_id == formData.brandId).display_value_name}
+                                                </span>
+                                            }
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <input type="text" className="form-input" disabled placeholder={isLoadingBrands ? "属性情報を取得中..." : "このカテゴリにはブランド属性がありません"} />
+                                )}
+                            </div>
                         </div>
 
                         <div className="card">
-                            <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>価格計算・在庫</h3>
+                            <h3 className="card-title">価格・在庫・物流</h3>
+
                             <div className="form-group">
-                                <label className="form-label">仕入れ原価 (円)</label>
-                                <input type="number" name="costPrice" className="form-input" placeholder="例: 5000" min="0" value={formData.costPrice} onChange={handleChange} />
-                                <small style={{ color: 'var(--color-text-secondary)' }}>ここに入力すると推奨販売価格が自動計算されます</small>
+                                <label className="form-label">仕入れ原価 (JPY)</label>
+                                <input type="number" name="costPrice" className="form-input" value={formData.costPrice} onChange={handleChange} />
                             </div>
 
                             {priceDetails && (
-                                <div style={{ background: 'var(--color-bg-tertiary)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--spacing-lg)', fontSize: 'var(--font-size-sm)' }}>
-                                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>💰 推奨価格の内訳 (利益率20%)</div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px' }}>
-                                        <span>原価:</span> <span>¥{priceDetails.baseCost.toLocaleString()}</span>
-                                        <span>送料(JP):</span> <span>¥{priceDetails.shippingJpy.toLocaleString()}</span>
-                                        <span>送料(SLS):</span> <span>¥{priceDetails.slsJpy.toLocaleString()}</span>
-                                        <span>手数料(9%):</span> <span>¥{priceDetails.commissionJpy.toLocaleString()}</span>
-                                        <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>利益(20%):</span>
-                                        <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>¥{priceDetails.profitJpy.toLocaleString()}</span>
-                                    </div>
-                                    <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '8px', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
-                                        <span>推奨価格 (TWD):</span><span>NT${priceDetails.finalTwd.toLocaleString()}</span>
-                                    </div>
+                                <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '16px', fontSize: '13px' }}>
+                                    <div>推奨価格: <strong>NT${priceDetails.finalTwd.toLocaleString()}</strong></div>
                                 </div>
                             )}
 
                             <div className="form-group">
                                 <label className="form-label">販売価格 (TWD) *</label>
-                                <input type="number" name="price" className="form-input" placeholder="0" min="0" value={formData.price} onChange={handleChange} required />
+                                <input type="number" name="price" className="form-input" value={formData.price} onChange={handleChange} required />
                             </div>
 
                             <div className="form-group">
                                 <label className="form-label">在庫数 *</label>
-                                <input type="number" name="stock" className="form-input" placeholder="0" min="0" value={formData.stock} onChange={handleChange} required />
+                                <input type="number" name="stock" className="form-input" value={formData.stock} onChange={handleChange} required />
                             </div>
 
                             <div className="form-group">
-                                <label className="form-label">重量 (kg)</label>
-                                <input type="number" name="weight" className="form-input" placeholder="0.5" min="0" step="0.1" value={formData.weight} onChange={handleChange} />
-                            </div>
-
-                            <div className="form-group" style={{ marginTop: 'var(--spacing-md)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--spacing-md)' }}>
-                                <label className="form-label">物流設定 (配送方法)</label>
+                                <label className="form-label">物流設定</label>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                    {logistics.length > 0 ? (
-                                        logistics.map(l => (
-                                            <label key={l.logistics_channel_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={l.enabled}
-                                                    onChange={(e) => {
-                                                        const isChecked = e.target.checked
-                                                        setLogistics(prev => prev.map(item => item.logistics_channel_id === l.logistics_channel_id ? { ...item, enabled: isChecked } : item))
-                                                    }}
-                                                />
-                                                <span>{l.logistics_channel_name}{['蝦皮日本', 'SLS'].some(k => l.logistics_channel_name.includes(k)) && <span style={{ fontSize: '0.8em', color: 'var(--color-text-secondary)', marginLeft: '4px' }}>(台湾向け配送)</span>}</span>
-                                            </label>
-                                        ))
-                                    ) : (
-                                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9em' }}>物流情報を読み込み中...</p>
-                                    )}
+                                    {logistics.map(l => (
+                                        <label key={l.logistics_channel_id} style={{ display: 'flex', align: 'center', gap: '8px' }}>
+                                            <input type="checkbox" checked={l.enabled} onChange={(e) => setLogistics(prev => prev.map(item => item.logistics_channel_id === l.logistics_channel_id ? { ...item, enabled: e.target.checked } : item))} />
+                                            <span>{l.logistics_channel_name}</span>
+                                        </label>
+                                    ))}
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="card" style={{ marginTop: 'var(--spacing-xl)' }}>
-                        <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>商品画像</h3>
-                        <div className="upload-zone" style={{ position: 'relative' }}>
-                            <input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
-                            {isUploading ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                    <div style={{ animation: 'spin 1s linear infinite', fontSize: '24px', marginBottom: '8px' }}>🔄</div>
-                                    <div>アップロード中...</div>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="upload-icon">📷</div>
-                                    <p style={{ fontWeight: 600, marginBottom: 'var(--spacing-sm)' }}>画像をドラッグ＆ドロップ</p>
-                                    <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>または<span style={{ color: 'var(--color-accent)' }}>クリックしてアップロード</span></p>
-                                </>
-                            )}
+                    <div className="card" style={{ marginTop: '20px' }}>
+                        <h3 className="card-title">画像</h3>
+                        <input type="file" multiple onChange={handleImageUpload} />
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                            {formData.images.map((img, i) => (
+                                <img key={i} src={img.preview || img.url} style={{ width: 80, height: 80, objectFit: 'cover' }} />
+                            ))}
                         </div>
-                        {formData.images.length > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--spacing-md)', marginTop: 'var(--spacing-lg)' }}>
-                                {formData.images.map((img, index) => (
-                                    <div key={index} style={{ position: 'relative', aspectRatio: '1' }}>
-                                        <img src={img.preview || img.url} alt={`商品画像 ${index + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', opacity: img.status === 'uploading' ? 0.5 : 1 }} />
-                                        {img.status === 'uploading' && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🔄</div>}
-                                        {img.status === 'error' && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,0,0,0.2)', color: 'red', fontWeight: 'bold' }}>!</div>}
-                                        <button type="button" onClick={() => removeImage(index)} style={{ position: 'absolute', top: -8, right: -8, width: 24, height: 24, borderRadius: '50%', background: 'red', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>✕</button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-md)', marginTop: 'var(--spacing-xl)' }}>
-                        <button type="button" className="btn btn-secondary" onClick={() => navigate('/products')} disabled={isSubmitting}>キャンセル</button>
-                        <button type="submit" className="btn btn-primary btn-lg" disabled={isSubmitting || isUploading}>{isSubmitting ? '出品中...' : '🚀 出品する'}</button>
+                    <div style={{ marginTop: '20px', textAlign: 'right' }}>
+                        <button type="submit" className="btn btn-primary" disabled={isSubmitting}>出品する</button>
                     </div>
                 </form>
             )}
-            <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
         </div>
     )
 }
