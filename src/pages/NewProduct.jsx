@@ -23,7 +23,7 @@ function NewProduct() {
         price: '', // 販売価格 (TWD)
         costPrice: '', // 原価 (JPY)
         stock: '',
-        category: '11041646', // デフォルト: フィギュア・模型（ユーザー指定）
+        category: '', // APIから自動取得
         sku: '',
         weight: '0.5',
         images: [] // { id: string, url: string, preview: string, file: File, status: 'uploading'|'done'|'error' }[]
@@ -44,33 +44,28 @@ function NewProduct() {
             setIsLoadingCategories(true)
 
             // カテゴリー取得
+            // カテゴリー取得
             getCategories(accessToken, shopId)
                 .then(result => {
                     if (result.response && result.response.category_list) {
                         const allCats = result.response.category_list
-                        const targetId = 11041646
-
-                        // デフォルトカテゴリがリストにあるか確認、なければ作成
-                        let defaultCat = allCats.find(c => c.category_id === targetId)
-                        if (!defaultCat) {
-                            defaultCat = { category_id: targetId, display_category_name: 'Figure/Model (Default)' }
-                            // リストになくても手動で追加して選択可能にする
-                            allCats.unshift(defaultCat)
-                        }
 
                         // フィギュア関連を優先的に表示
-                        const figureCats = allCats.filter(c =>
-                            /Figure|Toy|Hobby|公仔|模型/i.test(c.display_category_name) || c.category_id === targetId
-                        )
-                        // 重複排除のためのSet
-                        const figureIds = new Set(figureCats.map(c => c.category_id))
-                        const otherCats = allCats.filter(c => !figureIds.has(c.category_id))
+                        const figureKeywords = /Figure|Toy|Hobby|Action Figure|公仔|模型|手辦/i
+                        const figureCats = allCats.filter(c => figureKeywords.test(c.display_category_name))
+                        const otherCats = allCats.filter(c => !figureKeywords.test(c.display_category_name))
 
+                        // カテゴリリストを並び替え
                         setCategories([...figureCats, ...otherCats])
 
-                        // カテゴリが未設定またはデフォルトのままの場合、強制的にセット
+                        // 有効なカテゴリを選択 (フィギュア関連があればその先頭、なければ全リストの先頭)
+                        // ユーザー指定ID (11041646) がリストにある場合のみ、それを優先することも可能だが
+                        // invalidと言われているので、APIから返ってきた確実なIDを使う方が安全
                         if (!formData.category) {
-                            setFormData(prev => ({ ...prev, category: defaultCat.category_id }))
+                            const defaultCat = figureCats.length > 0 ? figureCats[0] : allCats[0]
+                            if (defaultCat) {
+                                setFormData(prev => ({ ...prev, category: defaultCat.category_id }))
+                            }
                         }
                     }
                 })
