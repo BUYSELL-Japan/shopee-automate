@@ -321,10 +321,6 @@ function NewProduct() {
                 .map(l => ({ logistic_id: l.logistic_id, enabled: true }))
             const finalPrice = parseFloat(formData.price)
 
-            // 属性リスト構築
-            const attributes = []
-            // ブランドはトップレベルに移動したため、属性リストには含めない
-
             // ブランド情報構築
             let brandPayload = undefined;
             if (formData.brandId) {
@@ -349,25 +345,29 @@ function NewProduct() {
                 };
             }
 
+            const stockVal = parseInt(formData.stock);
             const payload = {
                 item_name: formData.name,
                 description: formData.description,
                 original_price: finalPrice,
                 price: finalPrice,
-                normal_stock: parseInt(formData.stock),
+                normal_stock: stockVal,
+                seller_stock: [{ stock: stockVal }], // 必須フィールド追加
                 category_id: parseInt(formData.category),
                 weight: parseFloat(formData.weight),
                 image: { image_id_list: imageIdList },
                 logistic_info: logisticInfoPayload,
-                attribute_list: attributes,
-                brand: brandPayload // トップレベルに追加
+                attribute_list: [], // attribute_listは空（brandはトップレベル）
+                brand: brandPayload
             }
 
             console.log("Submitting payload:", JSON.stringify(payload, null, 2))
             const result = await addItem(accessToken, shopId, payload)
 
-            if (result.error) {
-                alert(`出品エラー: ${result.message || result.error}\n\n(詳細: ${JSON.stringify(result.response || {})})`)
+            if (result.error || (result.response && result.response.error)) {
+                // errorプロパティまたはresponse.errorをチェック
+                const msg = result.message || result.error || (result.response && result.response.message) || "Unknown Error";
+                alert(`出品エラー: ${msg}\n\n(詳細: ${JSON.stringify(result.response || result)})`)
                 console.error("Add Item Error:", result)
             } else {
                 alert('✅ 出品に成功しました！')
