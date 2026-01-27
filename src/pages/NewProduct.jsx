@@ -34,11 +34,13 @@ function NewProduct() {
     const [categories, setCategories] = useState([])
     const [logistics, setLogistics] = useState([])
 
-    // ブランド関連
+    // ブランド・属性関連
     const [brandAttributeId, setBrandAttributeId] = useState(null)
     const [brandOptions, setBrandOptions] = useState([])
+    const [adultAttributeId, setAdultAttributeId] = useState(null) // Adult属性用
+    const [adultNoValueId, setAdultNoValueId] = useState(null)     // Adult=NoのValueID
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
-    const [brandFilter, setBrandFilter] = useState('') // ブランド検索用フィルタ
+    const [brandFilter, setBrandFilter] = useState('')
 
     // その他UI
     const [isLoadingCategories, setIsLoadingCategories] = useState(false)
@@ -126,7 +128,7 @@ function NewProduct() {
         }
     }, [isConnected, accessToken, shopId])
 
-    // ブランド情報の取得 (カテゴリ変更時に発火)
+    // ブランド・属性情報の取得 (カテゴリ変更時に発火)
     useEffect(() => {
         if (!formData.category || !accessToken || !shopId) return;
 
@@ -135,6 +137,8 @@ function NewProduct() {
         setBrandAttributeId(null)
         setFormData(prev => ({ ...prev, brandId: '' })) // リセット
         setBrandFilter('')
+        setAdultAttributeId(null)
+        setAdultNoValueId(null)
 
         getAttributes(accessToken, shopId, parseInt(formData.category))
             .then(result => {
@@ -142,6 +146,7 @@ function NewProduct() {
                     const attrs = result.response.attribute_list;
                     console.log("Category Attributes:", attrs);
 
+                    // Brand属性を特定
                     const brandAttr = attrs.find(a =>
                         /Brand|品牌|メーカー/i.test(a.display_attribute_name) || a.mandatory
                     );
@@ -150,6 +155,23 @@ function NewProduct() {
                         setBrandAttributeId(brandAttr.attribute_id);
                         if (brandAttr.attribute_value_list) {
                             setBrandOptions(brandAttr.attribute_value_list);
+                        }
+                    }
+
+                    // Adult属性 (101044) を特定
+                    // IDが固定でない可能性もあるので名前でも探す
+                    const adultAttr = attrs.find(a =>
+                        a.attribute_id === 101044 || /Adult|成人/i.test(a.display_attribute_name)
+                    );
+                    if (adultAttr) {
+                        setAdultAttributeId(adultAttr.attribute_id);
+                        if (adultAttr.attribute_value_list) {
+                            // "No", "否", "いいえ" に相当する値を探す
+                            const noVal = adultAttr.attribute_value_list.find(v => /No|否|いいえ/i.test(v.display_value_name));
+                            if (noVal) {
+                                setAdultNoValueId(noVal.value_id);
+                                console.log(`Adult Attribute Found: ID=${adultAttr.attribute_id}, NoValue=${noVal.value_id}`);
+                            }
                         }
                     }
                 }
@@ -316,10 +338,32 @@ function NewProduct() {
 
         try {
             const imageIdList = validImages.map(img => img.id)
+
+            // 物流情報作成: logistic_id ではなく logistics_channel_id を使用するよう修正
             const logisticInfoPayload = logistics
                 .filter(l => l.enabled)
-                .map(l => ({ logistic_id: l.logistic_id, enabled: true }))
+                // 修正: l.logistics_channel_id を正しい値として使用
+                .map(l => ({
+                    logistic_id: l.logistics_channel_id, // Shopee API specとしてはキーはlogistic_id
+                    enabled: true
+                }))
+
             const finalPrice = parseFloat(formData.price)
+
+            // 属性リスト構築
+            const attributes = []
+
+            // Adult属性の追加 (必須対応)
+            if (adultAttributeId && adultNoValueId) {
+                attributes.push({
+                    attribute_id: adultAttributeId,
+                    attribute_value_list: [{ value_id: adultNoValueId }]
+                });
+            } else if (adultAttributeId) {
+                // IDはわかっているがValueが不明な場合、フォールバック（APIから取れなかった場合など）
+                // ただしValueIDがわからないと送信できないため、ここではスキップするか、適当な値を入れるわけにはいかない
+                console.warn("Adult attribute value ID not found. Skipping.");
+            }
 
             // ブランド情報構築
             let brandPayload = undefined;
@@ -352,12 +396,12 @@ function NewProduct() {
                 original_price: finalPrice,
                 price: finalPrice,
                 normal_stock: stockVal,
-                seller_stock: [{ stock: stockVal }], // 必須フィールド追加
+                seller_stock: [{ stock: stockVal }],
                 category_id: parseInt(formData.category),
                 weight: parseFloat(formData.weight),
                 image: { image_id_list: imageIdList },
                 logistic_info: logisticInfoPayload,
-                attribute_list: [], // attribute_listは空（brandはトップレベル）
+                attribute_list: attributes,
                 brand: brandPayload
             }
 
@@ -365,7 +409,6 @@ function NewProduct() {
             const result = await addItem(accessToken, shopId, payload)
 
             if (result.error || (result.response && result.response.error)) {
-                // errorプロパティまたはresponse.errorをチェック
                 const msg = result.message || result.error || (result.response && result.response.message) || "Unknown Error";
                 alert(`出品エラー: ${msg}\n\n(詳細: ${JSON.stringify(result.response || result)})`)
                 console.error("Add Item Error:", result)
