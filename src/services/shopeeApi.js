@@ -43,6 +43,19 @@ export async function getProducts(accessToken, shopId, options = {}) {
 }
 
 /**
+ * 商品詳細情報（Base Info）を取得
+ * @param {string} accessToken 
+ * @param {string} shopId 
+ * @param {string} itemId 
+ */
+export async function getItemDetail(accessToken, shopId, itemId) {
+    const response = await fetch(
+        `${API_BASE}/item_detail?access_token=${accessToken}&shop_id=${shopId}&item_id=${itemId}`
+    );
+    return await response.json();
+}
+
+/**
  * 注文一覧を取得
  */
 export async function getOrders(accessToken, shopId, options = {}) {
