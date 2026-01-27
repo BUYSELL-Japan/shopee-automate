@@ -23,7 +23,7 @@ function NewProduct() {
         price: '', // 販売価格 (TWD)
         costPrice: '', // 原価 (JPY)
         stock: '',
-        category: '', // 自動検出
+        category: '101385', // デフォルト: ユーザー指定のカテゴリーID
         sku: '',
         weight: '0.5',
         images: [] // { id: string, url: string, preview: string, file: File, status: 'uploading'|'done'|'error' }[]
@@ -61,6 +61,17 @@ function NewProduct() {
                         allCats = catResult.response.category_list
                     }
 
+                    // ユーザー指定のデフォルトIDを確認
+                    const defaultId = 101385
+                    const defaultCatExists = allCats.find(c => c.category_id === defaultId)
+                    if (!defaultCatExists) {
+                        // リストになければ強制追加
+                        allCats.unshift({
+                            category_id: defaultId,
+                            display_category_name: `Action Figure (Default ID: ${defaultId})`
+                        })
+                    }
+
                     // 既存商品から有効IDを探す (自動検出)
                     let foundId = null
                     if (prodResult.response && prodResult.response.item_list) {
@@ -77,8 +88,8 @@ function NewProduct() {
 
                     // リスト表示用フィルタ
                     const figureKeywords = /Figure|Toy|Hobby|Action Figure|公仔|模型|手辦/i
-                    const figureCats = allCats.filter(c => figureKeywords.test(c.display_category_name))
-                    const otherCats = allCats.filter(c => !figureKeywords.test(c.display_category_name))
+                    const figureCats = allCats.filter(c => figureKeywords.test(c.display_category_name) || c.category_id === defaultId)
+                    const otherCats = allCats.filter(c => !figureKeywords.test(c.display_category_name) && c.category_id !== defaultId)
 
                     if (foundId && !allCats.find(c => c.category_id === foundId)) {
                         allCats.unshift({
@@ -89,11 +100,13 @@ function NewProduct() {
 
                     setCategories(allCats)
 
+                    // IDセット優先順位: 既にセットされている値(デフォルト) > 検出ID > フィギュアリスト先頭
+                    // 今回はユーザー指定の 101385 をデフォルト値にしているので初期化ロジックは控えめに
                     if (!formData.category) {
                         if (foundId) {
                             setFormData(prev => ({ ...prev, category: foundId }))
-                        } else if (figureCats.length > 0) {
-                            setFormData(prev => ({ ...prev, category: figureCats[0].category_id }))
+                        } else {
+                            setFormData(prev => ({ ...prev, category: defaultId }))
                         }
                     }
                 })
@@ -166,14 +179,12 @@ function NewProduct() {
         setIsFetchingSource(true)
         try {
             const result = await getItemDetail(accessToken, shopId, sourceItemId)
-            // レスポンス構造確認 (item_list [ { item_id, category_id, ... } ])
             if (result.response && result.response.item_list && result.response.item_list.length > 0) {
                 const item = result.response.item_list[0]
                 console.log("Source item details:", item)
 
                 if (item.category_id) {
                     setFormData(prev => ({ ...prev, category: item.category_id }))
-                    // リストになければ追加
                     setCategories(prev => {
                         if (!prev.find(c => c.category_id === item.category_id)) {
                             return [{ category_id: item.category_id, display_category_name: `★ Copy from ${sourceItemId} (ID: ${item.category_id})` }, ...prev]
@@ -391,7 +402,7 @@ function NewProduct() {
                                     <option value="">{isLoadingCategories ? '読み込み中...' : 'カテゴリを選択'}</option>
                                     {categories.map((cat) => (
                                         <option key={cat.category_id} value={cat.category_id}>
-                                            {/Figure|Toy|Hobby|公仔|模型/i.test(cat.display_category_name) ? '★ ' : ''}
+                                            {cat.category_id === 101385 ? '◎ ' : /Figure|Toy|Hobby|公仔|模型/i.test(cat.display_category_name) ? '★ ' : ''}
                                             {cat.display_category_name}
                                             {detectedCategory && cat.category_id === detectedCategory.id ? ' (推奨)' : ''}
                                         </option>
