@@ -25,6 +25,7 @@ function NewProduct() {
         stock: '',
         category: '101385', // デフォルト
         brandId: '', // ブランドID (選択式)
+        adultId: '', // 成人向け属性の値ID
         sku: '',
         weight: '0.5',
         images: []
@@ -37,8 +38,8 @@ function NewProduct() {
     // ブランド・属性関連
     const [brandAttributeId, setBrandAttributeId] = useState(null)
     const [brandOptions, setBrandOptions] = useState([])
-    const [adultAttributeId, setAdultAttributeId] = useState(null) // Adult属性用
-    const [adultNoValueId, setAdultNoValueId] = useState(null)     // Adult=NoのValueID
+    const [adultAttributeId, setAdultAttributeId] = useState(null) // Adult属性ID (101044)
+    const [adultOptions, setAdultOptions] = useState([])           // Adult属性の選択肢
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
     const [brandFilter, setBrandFilter] = useState('')
 
@@ -135,10 +136,10 @@ function NewProduct() {
         setIsLoadingBrands(true)
         setBrandOptions([])
         setBrandAttributeId(null)
-        setFormData(prev => ({ ...prev, brandId: '' })) // リセット
+        setFormData(prev => ({ ...prev, brandId: '', adultId: '' })) // リセット
         setBrandFilter('')
         setAdultAttributeId(null)
-        setAdultNoValueId(null)
+        setAdultOptions([])
 
         getAttributes(accessToken, shopId, parseInt(formData.category))
             .then(result => {
@@ -159,18 +160,18 @@ function NewProduct() {
                     }
 
                     // Adult属性 (101044) を特定
-                    // IDが固定でない可能性もあるので名前でも探す
                     const adultAttr = attrs.find(a =>
                         a.attribute_id === 101044 || /Adult|成人/i.test(a.display_attribute_name)
                     );
                     if (adultAttr) {
                         setAdultAttributeId(adultAttr.attribute_id);
                         if (adultAttr.attribute_value_list) {
-                            // "No", "否", "いいえ" に相当する値を探す
+                            setAdultOptions(adultAttr.attribute_value_list);
+                            // デフォルトで「No/否」を選択
                             const noVal = adultAttr.attribute_value_list.find(v => /No|否|いいえ/i.test(v.display_value_name));
                             if (noVal) {
-                                setAdultNoValueId(noVal.value_id);
-                                console.log(`Adult Attribute Found: ID=${adultAttr.attribute_id}, NoValue=${noVal.value_id}`);
+                                setFormData(prev => ({ ...prev, adultId: noVal.value_id.toString() }));
+                                console.log(`Set default Adult=No value ID: ${noVal.value_id}`);
                             }
                         }
                     }
@@ -328,6 +329,12 @@ function NewProduct() {
             return
         }
 
+        // Adult属性チェック
+        if (adultAttributeId && !formData.adultId) {
+            alert('成人向け属性(Adult products)を選択してください')
+            return
+        }
+
         const validImages = formData.images.filter(img => img.status === 'done' && img.id)
         if (validImages.length === 0) {
             alert('画像を少なくとも1枚アップロードしてください')
@@ -339,12 +346,11 @@ function NewProduct() {
         try {
             const imageIdList = validImages.map(img => img.id)
 
-            // 物流情報作成: logistic_id ではなく logistics_channel_id を使用するよう修正
+            // 物流情報作成
             const logisticInfoPayload = logistics
                 .filter(l => l.enabled)
-                // 修正: l.logistics_channel_id を正しい値として使用
                 .map(l => ({
-                    logistic_id: l.logistics_channel_id, // Shopee API specとしてはキーはlogistic_id
+                    logistic_id: l.logistics_channel_id,
                     enabled: true
                 }))
 
@@ -353,16 +359,12 @@ function NewProduct() {
             // 属性リスト構築
             const attributes = []
 
-            // Adult属性の追加 (必須対応)
-            if (adultAttributeId && adultNoValueId) {
+            // Adult属性の追加 (必須)
+            if (adultAttributeId && formData.adultId) {
                 attributes.push({
                     attribute_id: adultAttributeId,
-                    attribute_value_list: [{ value_id: adultNoValueId }]
+                    attribute_value_list: [{ value_id: parseInt(formData.adultId) }]
                 });
-            } else if (adultAttributeId) {
-                // IDはわかっているがValueが不明な場合、フォールバック（APIから取れなかった場合など）
-                // ただしValueIDがわからないと送信できないため、ここではスキップするか、適当な値を入れるわけにはいかない
-                console.warn("Adult attribute value ID not found. Skipping.");
             }
 
             // ブランド情報構築
@@ -371,16 +373,13 @@ function NewProduct() {
                 const brandIdNum = parseInt(formData.brandId);
                 let brandName = "";
 
-                // 1. 取得済みオプションから名前検索
                 const matchOption = brandOptions.find(o => o.value_id === brandIdNum);
                 if (matchOption) {
                     brandName = matchOption.display_value_name;
-                }
-                // 2. なければ既知の名前から推測 (ユーザー申告のIDなど)
-                else {
+                } else {
                     if (brandIdNum === 1146303) brandName = "BANPRESTO";
                     else if (brandIdNum === 0) brandName = "No Brand";
-                    else brandName = "General"; // フォールバック
+                    else brandName = "General";
                 }
 
                 brandPayload = {
@@ -506,20 +505,15 @@ function NewProduct() {
                             <div className="form-group">
                                 <label className="form-label">
                                     ブランド (Brand) *
-                                    {isLoadingBrands && <span style={{ fontSize: '0.8em', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>読み込み中...</span>}
                                 </label>
-
                                 <div style={{ background: 'var(--color-bg-secondary)', padding: '12px', borderRadius: '8px' }}>
                                     {brandOptions.length > 0 ? (
                                         <>
-                                            {/* 推奨ブランドクイック選択 */}
                                             <div style={{ marginBottom: '8px' }}>
-                                                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginBottom: '4px', display: 'block' }}>よく使うブランド:</label>
                                                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                                     {popularBrands.map(brandName => {
                                                         let match = brandOptions.find(o => o.display_value_name.toLowerCase() === brandName.toLowerCase())
                                                         if (!match) match = brandOptions.find(o => o.display_value_name.toLowerCase().includes(brandName.toLowerCase()))
-
                                                         if (match) {
                                                             return (
                                                                 <button
@@ -538,7 +532,6 @@ function NewProduct() {
                                                 </div>
                                             </div>
 
-                                            {/* 検索と選択 */}
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                                 <input
                                                     type="text"
@@ -552,7 +545,7 @@ function NewProduct() {
                                                     value={formData.brandId}
                                                     onChange={handleChange}
                                                     name="brandId"
-                                                    size={5} // リスト表示にする
+                                                    size={5}
                                                     style={{ height: 'auto' }}
                                                 >
                                                     <option value="">-- 一覧から選択 --</option>
@@ -574,21 +567,10 @@ function NewProduct() {
                                                         name="brandId"
                                                     />
                                                 </div>
-                                                {formData.brandId && (
-                                                    <div style={{ color: 'var(--color-success)', fontSize: '0.9em' }}>
-                                                        現在設定中のID: <strong>{formData.brandId}</strong>
-                                                        {brandOptions.find(o => o.value_id == formData.brandId) &&
-                                                            ` (${brandOptions.find(o => o.value_id == formData.brandId).display_value_name})`
-                                                        }
-                                                    </div>
-                                                )}
                                             </div>
                                         </>
                                     ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                            <p style={{ fontSize: '0.9em', color: 'orange' }}>
-                                                ブランドリストが取得できませんでした。IDの手動入力のみ可能です。
-                                            </p>
                                             <input
                                                 type="text"
                                                 className="form-input"
@@ -601,6 +583,47 @@ function NewProduct() {
                                     )}
                                 </div>
                             </div>
+
+                            {/* 成人向け属性 (Adult) UI */}
+                            {adultAttributeId && (
+                                <div className="form-group" style={{ background: '#fff0f0', padding: '10px', borderRadius: '8px', border: '1px solid #ffcccb' }}>
+                                    <label className="form-label" style={{ color: '#d32f2f' }}>
+                                        成人向け商品 (Adult products) *
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                        {adultOptions.length > 0 ? (
+                                            adultOptions.map(opt => (
+                                                <label key={opt.value_id} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontWeight: 600 }}>
+                                                    <input
+                                                        type="radio"
+                                                        name="adultId"
+                                                        value={opt.value_id}
+                                                        checked={formData.adultId == opt.value_id}
+                                                        onChange={handleChange}
+                                                    />
+                                                    {opt.display_value_name}
+                                                </label>
+                                            ))
+                                        ) : (
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <input
+                                                    type="text"
+                                                    className="form-input"
+                                                    placeholder="Value ID (Option not found)"
+                                                    value={formData.adultId}
+                                                    onChange={handleChange}
+                                                    name="adultId"
+                                                />
+                                                <span style={{ fontSize: '0.8em', color: 'red' }}>値が取得できません。IDを手入力してください。</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p style={{ fontSize: '0.8em', color: '#666', marginTop: '4px' }}>
+                                        ※必須項目です。通常は「いいえ/No」を選択してください。
+                                    </p>
+                                </div>
+                            )}
+
                         </div>
 
                         <div className="card">
