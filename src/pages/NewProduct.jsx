@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { getCategories, uploadImage, addItem } from '../services/shopeeApi'
+import { getCategories, uploadImage, addItem, getLogistics } from '../services/shopeeApi'
 
 // 推奨価格計算用の定数
 const COSTS = {
@@ -23,7 +23,7 @@ function NewProduct() {
         price: '', // 販売価格 (TWD)
         costPrice: '', // 原価 (JPY)
         stock: '',
-        category: '11041647', // デフォルト: アクションフィギュア
+        category: '11041646', // デフォルト: フィギュア・模型（ユーザー指定）
         sku: '',
         weight: '0.5',
         images: [] // { id: string, url: string, preview: string, file: File, status: 'uploading'|'done'|'error' }[]
@@ -31,26 +31,36 @@ function NewProduct() {
 
     // UI状態
     const [categories, setCategories] = useState([])
+    const [logistics, setLogistics] = useState([])
     const [isLoadingCategories, setIsLoadingCategories] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [translating, setTranslating] = useState({ name: false, description: false })
     const [priceDetails, setPriceDetails] = useState(null)
 
-    // カテゴリー取得
+    // カテゴリー＆物流取得
     useEffect(() => {
         if (isConnected && accessToken && shopId) {
             setIsLoadingCategories(true)
+
+            // カテゴリー取得
             getCategories(accessToken, shopId)
                 .then(result => {
                     if (result.response && result.response.category_list) {
                         const allCats = result.response.category_list
-                        // 特定のID (11041647) を検索
-                        const defaultCat = allCats.find(c => c.category_id === 11041647)
+                        const targetId = 11041646
+
+                        // デフォルトカテゴリがリストにあるか確認、なければ作成
+                        let defaultCat = allCats.find(c => c.category_id === targetId)
+                        if (!defaultCat) {
+                            defaultCat = { category_id: targetId, display_category_name: 'Figure/Model (Default)' }
+                            // リストになくても手動で追加して選択可能にする
+                            allCats.unshift(defaultCat)
+                        }
 
                         // フィギュア関連を優先的に表示
                         const figureCats = allCats.filter(c =>
-                            /Figure|Toy|Hobby|公仔|模型/i.test(c.display_category_name) || c.category_id === 11041647
+                            /Figure|Toy|Hobby|公仔|模型/i.test(c.display_category_name) || c.category_id === targetId
                         )
                         // 重複排除のためのSet
                         const figureIds = new Set(figureCats.map(c => c.category_id))
@@ -58,15 +68,24 @@ function NewProduct() {
 
                         setCategories([...figureCats, ...otherCats])
 
-                        // カテゴリが未設定またはデフォルトのままの場合、名前解決できればそのまま、
-                        // もし初期値のIDがリストになくても、APIリクエストではIDがあれば通る可能性が高いので維持
-                        if (!formData.category && defaultCat) {
+                        // カテゴリが未設定またはデフォルトのままの場合、強制的にセット
+                        if (!formData.category) {
                             setFormData(prev => ({ ...prev, category: defaultCat.category_id }))
                         }
                     }
                 })
                 .catch(err => console.error('Category fetch error:', err))
                 .finally(() => setIsLoadingCategories(false))
+
+            // 物流チャンネル取得
+            getLogistics(accessToken, shopId)
+                .then(result => {
+                    if (result.response && result.response.logistics_channel_list) {
+                        setLogistics(result.response.logistics_channel_list)
+                        console.log("Logistics channels:", result.response.logistics_channel_list)
+                    }
+                })
+                .catch(err => console.error('Logistics fetch error:', err))
         }
     }, [isConnected, accessToken, shopId])
 
@@ -217,23 +236,41 @@ function NewProduct() {
         try {
             const imageIdList = validImages.map(img => img.id)
 
+            // 物流情報構築: ショップで有効なものを全て有効化
+            // API取得できていない場合は空配列になり、これだとエラーになる可能性が高い
+            // ユーザーはSLS必須と言っている
+            const logisticInfoPayload = logistics
+                .filter(l => l.enabled)
+                .map(l => ({
+                    logistic_id: l.logistic_id,
+                    enabled: true
+                }))
+
+            // 価格はオリジナルと販売価格を同じにする（セールなどは別途設定）
+            const finalPrice = parseFloat(formData.price)
+
             const payload = {
                 item_name: formData.name,
                 description: formData.description,
-                original_price: parseFloat(formData.price),
+                original_price: finalPrice,
+                price: finalPrice, // 追加: V2 APIではこれも必要
                 normal_stock: parseInt(formData.stock),
                 category_id: parseInt(formData.category),
                 weight: parseFloat(formData.weight),
                 image: {
                     image_id_list: imageIdList
                 },
-                logistic_info: [] // 物流設定（空配列の場合はショップデフォルトが適用されるか要確認だが必須項目）
+                logistic_info: logisticInfoPayload,
+                attribute_list: [] // 必須属性がある場合エラーになるが、まずは空で送る
             }
+
+            console.log("Submitting payload:", payload)
 
             const result = await addItem(accessToken, shopId, payload)
 
             if (result.error) {
-                alert(`出品エラー: ${result.message || result.error}\n(詳細なエラーはコンソールを確認してください)`)
+                // エラーメッセージを見やすく表示
+                alert(`出品エラー: ${result.message || result.error}\n\n(Shopeeのバリデーションエラーの可能性があります。必須項目が不足している場合は、詳細エラーを確認してください)`)
                 console.error("Add Item Error:", result)
             } else {
                 alert('✅ 出品に成功しました！')
@@ -315,6 +352,7 @@ function NewProduct() {
 
                             <div className="form-group">
                                 <label className="form-label">カテゴリ *</label>
+                                {/* カテゴリIDがリストにない場合の警告などは特に出さず、強制的に選択肢に入れる */}
                                 <select
                                     name="category"
                                     className="form-input form-select"
@@ -333,7 +371,7 @@ function NewProduct() {
                                         </option>
                                     ))}
                                     {categories.length === 0 && !isLoadingCategories && (
-                                        <option disabled>カテゴリが見つかりません</option>
+                                        <option value={formData.category}>{formData.category} (Default)</option>
                                     )}
                                 </select>
                             </div>

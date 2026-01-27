@@ -276,6 +276,16 @@ export async function uploadImage(accessToken, shopId, file) {
 }
 
 /**
+ * 物流チャンネル一覧を取得
+ */
+export async function getLogistics(accessToken, shopId) {
+    const response = await fetch(
+        `${API_BASE}/logistics?access_token=${accessToken}&shop_id=${shopId}`
+    );
+    return await response.json();
+}
+
+/**
  * 商品を新規出品 (Shopee API)
  */
 export async function addItem(accessToken, shopId, productData) {
