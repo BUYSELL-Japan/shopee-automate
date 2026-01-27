@@ -23,7 +23,7 @@ function NewProduct() {
         price: '', // 販売価格 (TWD)
         costPrice: '', // 原価 (JPY)
         stock: '',
-        category: '101385', // デフォルト: ユーザー指定
+        category: '101385', // デフォルト
         brandId: '', // ブランドID (選択式)
         sku: '',
         weight: '0.5',
@@ -301,7 +301,6 @@ function NewProduct() {
             return
         }
 
-        // ブランド必須チェック (手動入力または選択)
         if (!formData.brandId) {
             alert('ブランドを選択するか、IDを手入力してください')
             return
@@ -324,18 +323,30 @@ function NewProduct() {
 
             // 属性リスト構築
             const attributes = []
+            // ブランドはトップレベルに移動したため、属性リストには含めない
 
-            // ブランドID送信ロジック修正
-            // brandAttributeIdがAPIから取得できていない場合でも、手動入力用フォールバックIDを使用
-            // Shopee台湾の「Brand」属性IDは通常 9467 であることが多いが、カテゴリによって異なる可能性がある
-            // しかし手動入力する状況＝API取得失敗orリストにない＝強制送信が必要
-            const targetBrandAttrId = brandAttributeId || 9467; // 9467は一般的なBrand Attribute ID (要確認だがフォールバックとして機能させる)
+            // ブランド情報構築
+            let brandPayload = undefined;
+            if (formData.brandId) {
+                const brandIdNum = parseInt(formData.brandId);
+                let brandName = "";
 
-            if (formData.brandId && targetBrandAttrId) {
-                attributes.push({
-                    attribute_id: targetBrandAttrId,
-                    attribute_value_list: [{ value_id: parseInt(formData.brandId) }]
-                })
+                // 1. 取得済みオプションから名前検索
+                const matchOption = brandOptions.find(o => o.value_id === brandIdNum);
+                if (matchOption) {
+                    brandName = matchOption.display_value_name;
+                }
+                // 2. なければ既知の名前から推測 (ユーザー申告のIDなど)
+                else {
+                    if (brandIdNum === 1146303) brandName = "BANPRESTO";
+                    else if (brandIdNum === 0) brandName = "No Brand";
+                    else brandName = "General"; // フォールバック
+                }
+
+                brandPayload = {
+                    brand_id: brandIdNum,
+                    original_brand_name: brandName
+                };
             }
 
             const payload = {
@@ -348,10 +359,11 @@ function NewProduct() {
                 weight: parseFloat(formData.weight),
                 image: { image_id_list: imageIdList },
                 logistic_info: logisticInfoPayload,
-                attribute_list: attributes
+                attribute_list: attributes,
+                brand: brandPayload // トップレベルに追加
             }
 
-            console.log("Submitting payload:", JSON.stringify(payload, null, 2)) // 詳細ログ
+            console.log("Submitting payload:", JSON.stringify(payload, null, 2))
             const result = await addItem(accessToken, shopId, payload)
 
             if (result.error) {
@@ -447,7 +459,7 @@ function NewProduct() {
                                 </select>
                             </div>
 
-                            {/* ブランド選択UI (改善版) */}
+                            {/* ブランド選択UI */}
                             <div className="form-group">
                                 <label className="form-label">
                                     ブランド (Brand) *
@@ -532,13 +544,12 @@ function NewProduct() {
                                     ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             <p style={{ fontSize: '0.9em', color: 'orange' }}>
-                                                ブランドリストが取得できていないか、空です。IDを手動入力してください。
-                                                (例: BANPRESTO = 1146303)
+                                                ブランドリストが取得できませんでした。IDの手動入力のみ可能です。
                                             </p>
                                             <input
                                                 type="text"
                                                 className="form-input"
-                                                placeholder="ブランドID入力"
+                                                placeholder="ブランドID入力 (例: 1146303)"
                                                 value={formData.brandId}
                                                 onChange={handleChange}
                                                 name="brandId"
