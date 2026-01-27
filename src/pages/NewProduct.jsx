@@ -470,6 +470,39 @@ function NewProduct() {
                                     onChange={handleChange}
                                 />
                             </div>
+
+                            {/* 物流チャンネル選択 */}
+                            <div className="form-group" style={{ marginTop: 'var(--spacing-md)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--spacing-md)' }}>
+                                <label className="form-label">物流設定 (配送方法)</label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {logistics.length > 0 ? (
+                                        logistics.map(l => (
+                                            <label key={l.logistics_channel_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={l.enabled}
+                                                    onChange={(e) => {
+                                                        const isChecked = e.target.checked
+                                                        setLogistics(prev => prev.map(item =>
+                                                            item.logistics_channel_id === l.logistics_channel_id
+                                                                ? { ...item, enabled: isChecked }
+                                                                : item
+                                                        ))
+                                                    }}
+                                                />
+                                                <span>
+                                                    {l.logistics_channel_name}
+                                                    {['蝦皮日本', 'SLS'].some(k => l.logistics_channel_name.includes(k)) &&
+                                                        <span style={{ fontSize: '0.8em', color: 'var(--color-text-secondary)', marginLeft: '4px' }}>(台湾向け配送)</span>
+                                                    }
+                                                </span>
+                                            </label>
+                                        ))
+                                    ) : (
+                                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9em' }}>物流情報を読み込み中...</p>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
 
