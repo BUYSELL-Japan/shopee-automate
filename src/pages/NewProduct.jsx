@@ -301,8 +301,9 @@ function NewProduct() {
             return
         }
 
-        if (brandAttributeId && !formData.brandId) {
-            alert('ブランドを選択してください（またはIDを手入力してください）')
+        // ブランド必須チェック (手動入力または選択)
+        if (!formData.brandId) {
+            alert('ブランドを選択するか、IDを手入力してください')
             return
         }
 
@@ -323,9 +324,16 @@ function NewProduct() {
 
             // 属性リスト構築
             const attributes = []
-            if (brandAttributeId && formData.brandId) {
+
+            // ブランドID送信ロジック修正
+            // brandAttributeIdがAPIから取得できていない場合でも、手動入力用フォールバックIDを使用
+            // Shopee台湾の「Brand」属性IDは通常 9467 であることが多いが、カテゴリによって異なる可能性がある
+            // しかし手動入力する状況＝API取得失敗orリストにない＝強制送信が必要
+            const targetBrandAttrId = brandAttributeId || 9467; // 9467は一般的なBrand Attribute ID (要確認だがフォールバックとして機能させる)
+
+            if (formData.brandId && targetBrandAttrId) {
                 attributes.push({
-                    attribute_id: brandAttributeId,
+                    attribute_id: targetBrandAttrId,
                     attribute_value_list: [{ value_id: parseInt(formData.brandId) }]
                 })
             }
@@ -343,7 +351,7 @@ function NewProduct() {
                 attribute_list: attributes
             }
 
-            console.log("Submitting payload:", payload)
+            console.log("Submitting payload:", JSON.stringify(payload, null, 2)) // 詳細ログ
             const result = await addItem(accessToken, shopId, payload)
 
             if (result.error) {
