@@ -38,6 +38,7 @@ function NewProduct() {
     const [brandAttributeId, setBrandAttributeId] = useState(null)
     const [brandOptions, setBrandOptions] = useState([])
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
+    const [brandFilter, setBrandFilter] = useState('') // ブランド検索用フィルタ
 
     // その他UI
     const [isLoadingCategories, setIsLoadingCategories] = useState(false)
@@ -133,12 +134,11 @@ function NewProduct() {
         setBrandOptions([])
         setBrandAttributeId(null)
         setFormData(prev => ({ ...prev, brandId: '' })) // リセット
+        setBrandFilter('')
 
         getAttributes(accessToken, shopId, parseInt(formData.category))
             .then(result => {
                 if (result.response && result.response.attribute_list) {
-                    // Brand属性を探す (Mandatory: true かつ名前にBrandが含まれる、または特定の主要属性)
-                    // 日本語/英語/中国語対応のためキーワード検索
                     const attrs = result.response.attribute_list;
                     console.log("Category Attributes:", attrs);
 
@@ -150,19 +150,6 @@ function NewProduct() {
                         setBrandAttributeId(brandAttr.attribute_id);
                         if (brandAttr.attribute_value_list) {
                             setBrandOptions(brandAttr.attribute_value_list);
-
-                            // コンソールに主要ブランドIDを出力（デバッグ用）
-                            const targets = ['BANPRESTO', 'SEGA', 'Bandai', 'Taito', 'Furyu', 'Good Smile', 'Kotobukiya', 'MegaHouse'];
-                            console.log("--- Brand IDs Check ---");
-                            targets.forEach(t => {
-                                const found = brandAttr.attribute_value_list.find(v => v.display_value_name.toLowerCase().includes(t.toLowerCase()));
-                                if (found) {
-                                    console.log(`✅ ${t}: ${found.value_id} (${found.display_value_name})`);
-                                } else {
-                                    console.log(`❌ ${t}: Not found in current list`);
-                                }
-                            });
-                            console.log("-----------------------");
                         }
                     }
                 }
@@ -241,10 +228,7 @@ function NewProduct() {
                         return prev
                     })
                     setDetectedCategory({ id: item.category_id, name: `(コピー元: ${item.item_name.substring(0, 10)}...)` })
-
-                    // カテゴリに合わせて属性も再取得されるが、既存商品のAttribute値も取得できればセットしたい
-                    // しかしitem_detailにはattribute詳細が含まれない場合がある (get_item_extra_infoが必要かも)
-                    alert(`既存商品からカテゴリID: ${item.category_id} を取得しました。\n(属性情報は手動で選択してください)`)
+                    alert(`既存商品からカテゴリID: ${item.category_id} を取得しました。`)
                 }
             } else {
                 alert('商品情報の取得に失敗しました。IDが正しいか確認してください。')
@@ -317,9 +301,8 @@ function NewProduct() {
             return
         }
 
-        // ブランド必須チェック (もし属性が読み込まれていて必須なら)
         if (brandAttributeId && !formData.brandId) {
-            alert('ブランドを選択してください')
+            alert('ブランドを選択してください（またはIDを手入力してください）')
             return
         }
 
@@ -378,22 +361,15 @@ function NewProduct() {
         }
     }
 
-    // 主要ブランドを上に表示するためのフィルタ
+    // 主要ブランド
     const popularBrands = [
         'BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'
     ];
-    // 並び替え: 主要ブランド -> その他 (五十音順)
-    const sortedBrandOptions = [...brandOptions].sort((a, b) => {
-        const aName = a.display_value_name;
-        const bName = b.display_value_name;
-        const aPopIndex = popularBrands.findIndex(p => aName.toLowerCase().includes(p.toLowerCase()));
-        const bPopIndex = popularBrands.findIndex(p => bName.toLowerCase().includes(p.toLowerCase()));
 
-        if (aPopIndex !== -1 && bPopIndex !== -1) return aPopIndex - bPopIndex;
-        if (aPopIndex !== -1) return -1;
-        if (bPopIndex !== -1) return 1;
-        return aName.localeCompare(bName);
-    });
+    // フィルタリングされたブランドリスト
+    const filteredBrandOptions = brandOptions.filter(o =>
+        o.display_value_name.toLowerCase().includes(brandFilter.toLowerCase())
+    );
 
     return (
         <div className="page-container animate-fade-in">
@@ -414,6 +390,7 @@ function NewProduct() {
                         <div className="card">
                             <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
 
+                            {/* 既存商品からコピー */}
                             <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--color-border)' }}>
                                 <label style={{ fontSize: '0.85em', fontWeight: 600, marginBottom: '8px', display: 'block', color: 'var(--color-text-secondary)' }}>
                                     🔧 既存の商品IDからコピー
@@ -462,42 +439,105 @@ function NewProduct() {
                                 </select>
                             </div>
 
-                            {/* ブランド選択UI */}
+                            {/* ブランド選択UI (改善版) */}
                             <div className="form-group">
                                 <label className="form-label">
                                     ブランド (Brand) *
                                     {isLoadingBrands && <span style={{ fontSize: '0.8em', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>読み込み中...</span>}
                                 </label>
-                                {brandOptions.length > 0 ? (
-                                    <div style={{ position: 'relative' }}>
-                                        <input
-                                            list="brand-options"
-                                            name="brandId"
-                                            className="form-input"
-                                            placeholder="ブランドを検索または選択..."
-                                            value={formData.brandId}
-                                            onChange={handleChange}
-                                            onFocus={(e) => e.target.value = ''} // フォーカス時にクリアして全リスト表示しやすくする
-                                        />
-                                        <datalist id="brand-options">
-                                            {sortedBrandOptions.map((opt) => (
-                                                <option key={opt.value_id} value={opt.value_id}>
-                                                    {opt.display_value_name} {popularBrands.some(p => opt.display_value_name.includes(p)) ? '★' : ''}
-                                                </option>
-                                            ))}
-                                        </datalist>
-                                        <div style={{ fontSize: '0.8em', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                                            ※リストから選択するとID ({formData.brandId}) がセットされます
-                                            {formData.brandId && brandOptions.find(o => o.value_id == formData.brandId) &&
-                                                <span style={{ color: 'var(--color-success)', marginLeft: '8px' }}>
-                                                    選択中: {brandOptions.find(o => o.value_id == formData.brandId).display_value_name}
-                                                </span>
-                                            }
+
+                                <div style={{ background: 'var(--color-bg-secondary)', padding: '12px', borderRadius: '8px' }}>
+                                    {brandOptions.length > 0 ? (
+                                        <>
+                                            {/* 推奨ブランドクイック選択 */}
+                                            <div style={{ marginBottom: '8px' }}>
+                                                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginBottom: '4px', display: 'block' }}>よく使うブランド:</label>
+                                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                    {popularBrands.map(brandName => {
+                                                        let match = brandOptions.find(o => o.display_value_name.toLowerCase() === brandName.toLowerCase())
+                                                        if (!match) match = brandOptions.find(o => o.display_value_name.toLowerCase().includes(brandName.toLowerCase()))
+
+                                                        if (match) {
+                                                            return (
+                                                                <button
+                                                                    key={match.value_id}
+                                                                    type="button"
+                                                                    className={`btn btn-sm ${formData.brandId == match.value_id ? 'btn-primary' : 'btn-secondary'}`}
+                                                                    onClick={() => setFormData(prev => ({ ...prev, brandId: match.value_id.toString() }))}
+                                                                    style={{ fontSize: '11px', padding: '2px 8px', height: 'auto', borderRadius: '12px' }}
+                                                                >
+                                                                    {match.display_value_name}
+                                                                </button>
+                                                            )
+                                                        }
+                                                        return null
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {/* 検索と選択 */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                <input
+                                                    type="text"
+                                                    className="form-input"
+                                                    placeholder="ブランド名を検索..."
+                                                    value={brandFilter}
+                                                    onChange={(e) => setBrandFilter(e.target.value)}
+                                                />
+                                                <select
+                                                    className="form-input form-select"
+                                                    value={formData.brandId}
+                                                    onChange={handleChange}
+                                                    name="brandId"
+                                                    size={5} // リスト表示にする
+                                                    style={{ height: 'auto' }}
+                                                >
+                                                    <option value="">-- 一覧から選択 --</option>
+                                                    {filteredBrandOptions.slice(0, 100).map(opt => (
+                                                        <option key={opt.value_id} value={opt.value_id}>
+                                                            {opt.display_value_name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                                                    <span style={{ fontSize: '0.9em' }}>または ID直接入力:</span>
+                                                    <input
+                                                        type="text"
+                                                        className="form-input"
+                                                        style={{ width: '120px' }}
+                                                        placeholder="例: 1146303"
+                                                        value={formData.brandId}
+                                                        onChange={handleChange}
+                                                        name="brandId"
+                                                    />
+                                                </div>
+                                                {formData.brandId && (
+                                                    <div style={{ color: 'var(--color-success)', fontSize: '0.9em' }}>
+                                                        現在設定中のID: <strong>{formData.brandId}</strong>
+                                                        {brandOptions.find(o => o.value_id == formData.brandId) &&
+                                                            ` (${brandOptions.find(o => o.value_id == formData.brandId).display_value_name})`
+                                                        }
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            <p style={{ fontSize: '0.9em', color: 'orange' }}>
+                                                ブランドリストが取得できていないか、空です。IDを手動入力してください。
+                                                (例: BANPRESTO = 1146303)
+                                            </p>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                placeholder="ブランドID入力"
+                                                value={formData.brandId}
+                                                onChange={handleChange}
+                                                name="brandId"
+                                            />
                                         </div>
-                                    </div>
-                                ) : (
-                                    <input type="text" className="form-input" disabled placeholder={isLoadingBrands ? "属性情報を取得中..." : "このカテゴリにはブランド属性がありません"} />
-                                )}
+                                    )}
+                                </div>
                             </div>
                         </div>
 
