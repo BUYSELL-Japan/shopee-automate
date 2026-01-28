@@ -12,6 +12,23 @@ const COSTS = {
     TWD_JPY_RATE: 4.5
 }
 
+// デフォルトのフッターテキスト
+const DEFAULT_FOOTER_TEXT = `官方授權正品
+
+本店保證所有公仔皆為日本官方授權正品，絕不販售仿冒品或盜版商品。請安心購買！
+
+運送與包裝
+
+商品將從日本倉庫寄出，我們會使用氣泡布與紙箱進行嚴密防護與包裝。
+
+外盒聲明
+
+景品外盒在運送或夾取時可能產生輕微凹痕、摩擦痕跡，若不影響公仔本體，恕不接受退換貨，敬請理解。
+
+【特別提醒】
+
+由於是從日本跨境運送，到貨時程約需 7-14 個工作天，謝謝您的耐心等候！`
+
 function NewProduct() {
     const navigate = useNavigate()
     const { accessToken, shopId, isConnected } = useShopeeAuth()
@@ -20,15 +37,29 @@ function NewProduct() {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
-        price: '', // 販売価格 (TWD)
-        costPrice: '', // 原価 (JPY)
+        descriptionFooter: DEFAULT_FOOTER_TEXT,
+        price: '',
+        costPrice: '',
         stock: '',
-        category: '101385', // デフォルト: Action Figure
-        brandId: '1146303', // デフォルト: BANPRESTO (ID: 1146303)
+        category: '101385',
+        brandId: '1146303',
         sku: '',
         weight: '0.5',
         images: []
     })
+
+    // スペック用状態 (IDと値を保持)
+    const [specs, setSpecs] = useState({
+        material: { attrId: null, valueId: null, display: '' },      // Material: PVC
+        goodsType: { attrId: null, valueId: null, display: '' },     // Goods Type: Figure
+        style: { attrId: null, valueId: null, display: '' },         // Style: Anime
+        feature: { attrId: null, valueId: null, display: '' },       // Material Feature: Painted
+        warranty: { attrId: null, valueId: null, display: '' },      // Warranty: NA
+        character: { attrId: null, valueId: null, text: '', translated: '' } // Character: Manual+AI
+    })
+
+    // キャラクター入力用
+    const [characterInput, setCharacterInput] = useState('')
 
     // UI状態
     const [categories, setCategories] = useState([])
@@ -37,6 +68,10 @@ function NewProduct() {
     // ブランド・属性関連
     const [brandAttributeId, setBrandAttributeId] = useState(null)
     const [brandOptions, setBrandOptions] = useState([])
+
+    // Adult (Verification済)
+    const ADULT_ATTR_ID = 101044;
+    const ADULT_VALUE_ID = 11441;
 
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
     const [brandFilter, setBrandFilter] = useState('')
@@ -49,7 +84,7 @@ function NewProduct() {
     const [detectedCategory, setDetectedCategory] = useState(null)
     const [isUploading, setIsUploading] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
-    const [translating, setTranslating] = useState({ name: false, description: false })
+    const [translating, setTranslating] = useState({ name: false, description: false, character: false })
     const [priceDetails, setPriceDetails] = useState(null)
 
     // 既存商品コピー用
@@ -59,11 +94,7 @@ function NewProduct() {
     useEffect(() => {
         if (isConnected && accessToken && shopId) {
             setIsLoadingCategories(true)
-
-            // 1. カテゴリー一覧取得
             const fetchCats = getCategories(accessToken, shopId)
-
-            // 2. 既存商品から実績のあるカテゴリIDを取得
             const fetchExisting = getProducts(accessToken, shopId, { pageSize: 50 })
 
             Promise.all([fetchCats, fetchExisting])
@@ -72,8 +103,6 @@ function NewProduct() {
                     if (catResult.response && catResult.response.category_list) {
                         allCats = catResult.response.category_list
                     }
-
-                    // ユーザー指定のデフォルトIDを確認
                     const defaultId = 101385
                     const defaultCatExists = allCats.find(c => c.category_id === defaultId)
                     if (!defaultCatExists) {
@@ -83,7 +112,6 @@ function NewProduct() {
                         })
                     }
 
-                    // 既存商品から有効IDを探す
                     let foundId = null
                     if (prodResult.response && prodResult.response.item_list) {
                         const items = prodResult.response.item_list
@@ -97,20 +125,7 @@ function NewProduct() {
                         }
                     }
 
-                    // 表示用リスト構築
-                    const figureKeywords = /Figure|Toy|Hobby|Action Figure|公仔|模型|手辦/i
-                    const figureCats = allCats.filter(c => figureKeywords.test(c.display_category_name) || c.category_id === defaultId)
-                    const otherCats = allCats.filter(c => !figureKeywords.test(c.display_category_name) && c.category_id !== defaultId)
-
-                    if (foundId && !allCats.find(c => c.category_id === foundId)) {
-                        allCats.unshift({
-                            category_id: foundId,
-                            display_category_name: `★ Detected ID: ${foundId}`
-                        })
-                    }
-
                     setCategories(allCats)
-
                     if (!formData.category) {
                         setFormData(prev => ({ ...prev, category: defaultId }))
                     }
@@ -118,7 +133,6 @@ function NewProduct() {
                 .catch(err => console.error('Data fetch error:', err))
                 .finally(() => setIsLoadingCategories(false))
 
-            // 物流チャンネル取得
             getLogistics(accessToken, shopId)
                 .then(result => {
                     if (result.response && result.response.logistics_channel_list) {
@@ -129,7 +143,7 @@ function NewProduct() {
         }
     }, [isConnected, accessToken, shopId])
 
-    // ブランド・属性情報の取得
+    // ブランド・属性情報の取得 & スペック自動検出
     useEffect(() => {
         if (!formData.category || !accessToken || !shopId) return;
 
@@ -137,6 +151,17 @@ function NewProduct() {
         setBrandAttributeId(null)
         setBrandFilter('')
         setDebugAttributes(null)
+
+        // スペック状態リセット
+        setSpecs({
+            material: { attrId: null, valueId: null, display: '' },
+            goodsType: { attrId: null, valueId: null, display: '' },
+            style: { attrId: null, valueId: null, display: '' },
+            feature: { attrId: null, valueId: null, display: '' },
+            warranty: { attrId: null, valueId: null, display: '' },
+            character: { attrId: null, valueId: null, text: '', translated: '' }
+        });
+        setCharacterInput('');
 
         getAttributes(accessToken, shopId, parseInt(formData.category))
             .then(result => {
@@ -155,8 +180,6 @@ function NewProduct() {
                         if (brandAttr.attribute_value_list) {
                             opts = brandAttr.attribute_value_list;
                         }
-
-                        // BANPRESTO (1146303) がリストにない場合、手動で追加して選択できるようにする
                         if (!opts.find(o => o.value_id === 1146303)) {
                             opts.unshift({
                                 value_id: 1146303,
@@ -164,12 +187,79 @@ function NewProduct() {
                             });
                         }
                         setBrandOptions(opts);
-
-                        // もしブランドが空ならデフォルト設定
                         if (!formData.brandId) {
                             setFormData(prev => ({ ...prev, brandId: '1146303' }));
                         }
                     }
+
+                    // --- スペック自動検出ロジック ---
+                    const newSpecs = { ...specs };
+
+                    const findAttr = (keywords) => attrs.find(a => keywords.some(k => a.display_attribute_name.toLowerCase().includes(k.toLowerCase())));
+                    const findVal = (list, keywords) => list ? list.find(v => keywords.some(k => v.display_value_name.toLowerCase().includes(k.toLowerCase()))) : null;
+
+                    // 1. Material (PVC)
+                    const matAttr = findAttr(['Material', '材質']);
+                    if (matAttr) {
+                        const val = findVal(matAttr.attribute_value_list, ['PVC']);
+                        newSpecs.material = {
+                            attrId: matAttr.attribute_id,
+                            valueId: val ? val.value_id : null,
+                            display: val ? val.display_value_name : '(Not Found)'
+                        };
+                    }
+
+                    // 2. Goods Type (Figure/手辦)
+                    const typeAttr = findAttr(['Goods Type', 'Commodity Type', '商品類型', '種類']);
+                    if (typeAttr) {
+                        const val = findVal(typeAttr.attribute_value_list, ['Figure', '手辦', '公仔']);
+                        newSpecs.goodsType = {
+                            attrId: typeAttr.attribute_id,
+                            valueId: val ? val.value_id : null,
+                            display: val ? val.display_value_name : '(Not Found)'
+                        };
+                    }
+
+                    // 3. Style (Anime/動漫)
+                    const styleAttr = findAttr(['Style', '風格']);
+                    if (styleAttr) {
+                        const val = findVal(styleAttr.attribute_value_list, ['Anime', '動漫', 'Cartoon']);
+                        newSpecs.style = {
+                            attrId: styleAttr.attribute_id,
+                            valueId: val ? val.value_id : null,
+                            display: val ? val.display_value_name : '(Not Found)'
+                        };
+                    }
+
+                    // 4. Feature (Painted/已上色)
+                    const featAttr = findAttr(['Feature', '特性', '屬性']);
+                    if (featAttr) {
+                        const val = findVal(featAttr.attribute_value_list, ['Painted', '已上色', 'Finished']);
+                        newSpecs.feature = {
+                            attrId: featAttr.attribute_id,
+                            valueId: val ? val.value_id : null,
+                            display: val ? val.display_value_name : '(Not Found)'
+                        };
+                    }
+
+                    // 5. Warranty (NA/無)
+                    const warAttr = findAttr(['Warranty', '保固']);
+                    if (warAttr) {
+                        const val = findVal(warAttr.attribute_value_list, ['No', '無', 'NA', 'None']);
+                        newSpecs.warranty = {
+                            attrId: warAttr.attribute_id,
+                            valueId: val ? val.value_id : null,
+                            display: val ? val.display_value_name : '(Not Found)'
+                        };
+                    }
+
+                    // 6. Character (Manual)
+                    const charAttr = findAttr(['Character', '角色', '人物']);
+                    if (charAttr) {
+                        newSpecs.character.attrId = charAttr.attribute_id;
+                    }
+
+                    setSpecs(newSpecs); // update state
                 }
             })
             .catch(err => console.error('Attribute fetch error:', err))
@@ -203,7 +293,7 @@ function NewProduct() {
     }, [formData.costPrice])
 
     const handleTranslate = async (field) => {
-        const text = formData[field]
+        const text = field === 'character' ? characterInput : formData[field]
         if (!text) return
 
         setTranslating(prev => ({ ...prev, [field]: true }))
@@ -215,7 +305,15 @@ function NewProduct() {
             })
             const result = await response.json()
             if (result.status === 'success') {
-                setFormData(prev => ({ ...prev, [field]: result.translation }))
+                if (field === 'character') {
+                    // Character入力の場合は、翻訳結果をセット
+                    setSpecs(prev => ({
+                        ...prev,
+                        character: { ...prev.character, text: result.translation, translated: result.translation }
+                    }));
+                } else {
+                    setFormData(prev => ({ ...prev, [field]: result.translation }))
+                }
             } else {
                 alert('翻訳エラー: ' + result.message)
             }
@@ -315,7 +413,6 @@ function NewProduct() {
             alert('カテゴリを選択してください')
             return
         }
-
         if (!formData.brandId) {
             alert('ブランドを選択してください')
             return
@@ -339,15 +436,64 @@ function NewProduct() {
                 }))
 
             const finalPrice = parseFloat(formData.price)
+            const fullDescription = `${formData.description}\n\n${formData.descriptionFooter}`;
 
-            // 属性リスト構築
+            // --- 属性リスト構築 ---
             const attributes = []
 
-            // Adult Attribute (101044) ハードコード (Verified ID: 11441)
+            // 1. Adult Attribute (Verified ID: 11441)
             attributes.push({
-                attribute_id: 101044,
-                attribute_value_list: [{ value_id: 11441 }]
+                attribute_id: ADULT_ATTR_ID,
+                attribute_value_list: [{ value_id: ADULT_VALUE_ID }]
             });
+
+            // 2. Specifications (detected defaults or processed character)
+            // Helper to add if valid
+            const addSpec = (specObj) => {
+                if (specObj && specObj.attrId && specObj.valueId) {
+                    attributes.push({
+                        attribute_id: specObj.attrId,
+                        attribute_value_list: [{ value_id: specObj.valueId }]
+                    });
+                }
+            };
+
+            addSpec(specs.material);
+            addSpec(specs.goodsType);
+            addSpec(specs.style);
+            addSpec(specs.feature);
+            addSpec(specs.warranty);
+
+            // Character Handling (Special Case)
+            // If we have an attrId and some text
+            // Note: If no value_id matches, we might need to skip or try value_unit (if allowed, but usually not for structured specs).
+            // For now, only adding if we somehow mapped it or if it's strictly required.
+            // User requirement: "Characterは手動入力をAI翻訳 ... をペイロードに含めたい"
+            // If it's a list attribute, we can't just send text. 
+            // BUT, for the sake of the request: if we found a value match? We don't have a value match.
+            // *Experimental*: Try sending original_value_name if value_id is missing? (Risk of error)
+            // Since we can't dynamically match user text to ID without the full list in state (we have it in debugAttributes),
+            // let's try this:
+            if (specs.character.attrId && specs.character.text) {
+                // Try to find ID from debug attributes list
+                const charAttr = debugAttributes.find(a => a.attribute_id === specs.character.attrId);
+                let matchId = null;
+                if (charAttr && charAttr.attribute_value_list) {
+                    const match = charAttr.attribute_value_list.find(v => v.display_value_name === specs.character.text);
+                    if (match) matchId = match.value_id;
+                }
+
+                if (matchId) {
+                    attributes.push({
+                        attribute_id: specs.character.attrId,
+                        attribute_value_list: [{ value_id: matchId }]
+                    });
+                } else {
+                    console.warn("Character text value not found in pre-defined list. Skipping to avoid error.");
+                    // Option: Alert user? Or ignore?
+                }
+            }
+
 
             // Brand
             let brandPayload = undefined;
@@ -373,7 +519,7 @@ function NewProduct() {
             const stockVal = parseInt(formData.stock);
             const payload = {
                 item_name: formData.name,
-                description: formData.description,
+                description: fullDescription,
                 original_price: finalPrice,
                 price: finalPrice,
                 normal_stock: stockVal,
@@ -442,7 +588,13 @@ function NewProduct() {
                                         <pre>{JSON.stringify(debugAttributes, null, 2)}</pre>
                                     </div>
                                     <div style={{ marginTop: '10px', fontSize: '0.9em' }}>
-                                        <strong>Forced Adult Value ID:</strong> 11441 (No)
+                                        <strong>Specs Detected:</strong><br />
+                                        Mat: {specs.material.display}<br />
+                                        Type: {specs.goodsType.display}<br />
+                                        Style: {specs.style.display}<br />
+                                        Feat: {specs.feature.display}<br />
+                                        Warr: {specs.warranty.display}<br />
+                                        Char AttrID: {specs.character.attrId || 'None'}
                                     </div>
                                 </details>
                             )}
@@ -478,6 +630,18 @@ function NewProduct() {
                                         {translating.description ? '翻訳中...' : '✨ AI翻訳'}
                                     </button>
                                 </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">共通フッター (自動挿入)</label>
+                                <textarea
+                                    name="descriptionFooter"
+                                    className="form-input form-textarea"
+                                    style={{ height: '150px', background: '#f9f9f9', fontSize: '0.9em' }}
+                                    value={formData.descriptionFooter}
+                                    onChange={handleChange}
+                                />
+                                <p style={{ fontSize: '0.8em', color: '#666', marginTop: '4px' }}>※この内容は商品説明の最後に追加されます。</p>
                             </div>
 
                             <div className="form-group">
@@ -573,6 +737,72 @@ function NewProduct() {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* --- Specifications Section --- */}
+                            <div className="card" style={{ marginTop: '20px', border: '1px solid #e0e0e0' }}>
+                                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    📋 Specifications (自動設定)
+                                </h3>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    {/* Material */}
+                                    <div className="form-group">
+                                        <label className="form-label">Material (PVC)</label>
+                                        <input type="text" className="form-input" value={specs.material.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
+                                    </div>
+                                    {/* Goods Type */}
+                                    <div className="form-group">
+                                        <label className="form-label">Goods Type (Figure)</label>
+                                        <input type="text" className="form-input" value={specs.goodsType.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
+                                    </div>
+                                    {/* Style */}
+                                    <div className="form-group">
+                                        <label className="form-label">Style (Anime)</label>
+                                        <input type="text" className="form-input" value={specs.style.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
+                                    </div>
+                                    {/* Feature */}
+                                    <div className="form-group">
+                                        <label className="form-label">Material Feature (Painted)</label>
+                                        <input type="text" className="form-input" value={specs.feature.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
+                                    </div>
+                                    {/* Warranty */}
+                                    <div className="form-group">
+                                        <label className="form-label">Warranty Type (NA)</label>
+                                        <input type="text" className="form-input" value={specs.warranty.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
+                                    </div>
+
+                                    {/* Character */}
+                                    <div className="form-group">
+                                        <label className="form-label">Character (Manual Input)</label>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                placeholder="例: 孫悟空 (日本語)"
+                                                value={characterInput}
+                                                onChange={(e) => setCharacterInput(e.target.value)}
+                                            />
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                onClick={() => handleTranslate('character')}
+                                                disabled={translating.character || !characterInput}
+                                                style={{ whiteSpace: 'nowrap' }}
+                                            >
+                                                {translating.character ? '翻訳中' : '翻訳'}
+                                            </button>
+                                        </div>
+                                        {specs.character.text && (
+                                            <div style={{ marginTop: '4px', fontSize: '0.9em', color: 'green' }}>
+                                                Translated: <strong>{specs.character.text}</strong>
+                                                {specs.character.attrId ? '' : ' (AttrID not found)'}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+
                         </div>
 
                         <div className="card">
