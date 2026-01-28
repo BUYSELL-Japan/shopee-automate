@@ -48,46 +48,34 @@ function NewProduct() {
         images: []
     })
 
-    // スペック用状態 (IDと値を保持)
+    // スペック用状態
     const [specs, setSpecs] = useState({
-        material: { attrId: null, valueId: null, display: '' },      // Material: PVC
-        goodsType: { attrId: null, valueId: null, display: '' },     // Goods Type: Figure
-        style: { attrId: null, valueId: null, display: '' },         // Style: Anime
-        feature: { attrId: null, valueId: null, display: '' },       // Material Feature: Painted
-        warranty: { attrId: null, valueId: null, display: '' },      // Warranty: NA
-        character: { attrId: null, valueId: null, text: '', translated: '' } // Character: Manual+AI
+        material: { attrId: null, valueId: null, display: '' },
+        goodsType: { attrId: null, valueId: null, display: '' },
+        style: { attrId: null, valueId: null, display: '' },
+        feature: { attrId: null, valueId: null, display: '' },
+        warranty: { attrId: null, valueId: null, display: '' },
+        character: { attrId: null, valueId: null, text: '', translated: '' }
     })
 
     // キャラクター入力用
     const [characterInput, setCharacterInput] = useState('')
 
-    // UI状態
     const [categories, setCategories] = useState([])
     const [logistics, setLogistics] = useState([])
-
-    // ブランド・属性関連
     const [brandAttributeId, setBrandAttributeId] = useState(null)
     const [brandOptions, setBrandOptions] = useState([])
-
-    // Adult (Verification済)
     const ADULT_ATTR_ID = 101044;
     const ADULT_VALUE_ID = 11441;
-
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
     const [brandFilter, setBrandFilter] = useState('')
-
-    // デバッグ用
     const [debugAttributes, setDebugAttributes] = useState(null)
-
-    // その他UI
     const [isLoadingCategories, setIsLoadingCategories] = useState(false)
     const [detectedCategory, setDetectedCategory] = useState(null)
     const [isUploading, setIsUploading] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [translating, setTranslating] = useState({ name: false, description: false, character: false })
     const [priceDetails, setPriceDetails] = useState(null)
-
-    // 既存商品コピー用
     const [sourceItemId, setSourceItemId] = useState('47000206128')
     const [isFetchingSource, setIsFetchingSource] = useState(false)
 
@@ -143,7 +131,7 @@ function NewProduct() {
         }
     }, [isConnected, accessToken, shopId])
 
-    // ブランド・属性情報の取得 & スペック自動検出
+    // ブランド・属性情報の取得
     useEffect(() => {
         if (!formData.category || !accessToken || !shopId) return;
 
@@ -151,8 +139,6 @@ function NewProduct() {
         setBrandAttributeId(null)
         setBrandFilter('')
         setDebugAttributes(null)
-
-        // スペック状態リセット
         setSpecs({
             material: { attrId: null, valueId: null, display: '' },
             goodsType: { attrId: null, valueId: null, display: '' },
@@ -165,106 +151,65 @@ function NewProduct() {
 
         getAttributes(accessToken, shopId, parseInt(formData.category))
             .then(result => {
-                console.log("Feature: getAttributes result", result);
                 if (result.response && result.response.attribute_list) {
                     const attrs = result.response.attribute_list;
                     setDebugAttributes(attrs);
 
-                    // Brand
-                    const brandAttr = attrs.find(a =>
-                        /Brand|品牌|メーカー/i.test(a.display_attribute_name) || a.mandatory
-                    );
+                    const brandAttr = attrs.find(a => /Brand|品牌|メーカー/i.test(a.display_attribute_name) || a.mandatory);
                     if (brandAttr) {
                         setBrandAttributeId(brandAttr.attribute_id);
-                        let opts = [];
-                        if (brandAttr.attribute_value_list) {
-                            opts = brandAttr.attribute_value_list;
-                        }
+                        let opts = brandAttr.attribute_value_list || [];
                         if (!opts.find(o => o.value_id === 1146303)) {
-                            opts.unshift({
-                                value_id: 1146303,
-                                display_value_name: 'BANPRESTO (Recommended)'
-                            });
+                            opts.unshift({ value_id: 1146303, display_value_name: 'BANPRESTO (Recommended)' });
                         }
                         setBrandOptions(opts);
-                        if (!formData.brandId) {
-                            setFormData(prev => ({ ...prev, brandId: '1146303' }));
-                        }
+                        if (!formData.brandId) setFormData(prev => ({ ...prev, brandId: '1146303' }));
                     }
 
-                    // --- スペック自動検出ロジック ---
                     const newSpecs = { ...specs };
-
                     const findAttr = (keywords) => attrs.find(a => keywords.some(k => a.display_attribute_name.toLowerCase().includes(k.toLowerCase())));
                     const findVal = (list, keywords) => list ? list.find(v => keywords.some(k => v.display_value_name.toLowerCase().includes(k.toLowerCase()))) : null;
 
-                    // 1. Material (PVC)
+                    // Material (PVC)
                     const matAttr = findAttr(['Material', '材質']);
                     if (matAttr) {
                         const val = findVal(matAttr.attribute_value_list, ['PVC']);
-                        newSpecs.material = {
-                            attrId: matAttr.attribute_id,
-                            valueId: val ? val.value_id : null,
-                            display: val ? val.display_value_name : '(Not Found)'
-                        };
+                        newSpecs.material = { attrId: matAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
                     }
-
-                    // 2. Goods Type (Figure/手辦)
-                    const typeAttr = findAttr(['Goods Type', 'Commodity Type', '商品類型', '種類']);
+                    // Goods Type (Figure)
+                    const typeAttr = findAttr(['Goods Type', 'Type', 'Commodity', '商品類型']);
                     if (typeAttr) {
                         const val = findVal(typeAttr.attribute_value_list, ['Figure', '手辦', '公仔']);
-                        newSpecs.goodsType = {
-                            attrId: typeAttr.attribute_id,
-                            valueId: val ? val.value_id : null,
-                            display: val ? val.display_value_name : '(Not Found)'
-                        };
+                        newSpecs.goodsType = { attrId: typeAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
                     }
-
-                    // 3. Style (Anime/動漫)
+                    // Style (Anime)
                     const styleAttr = findAttr(['Style', '風格']);
                     if (styleAttr) {
-                        const val = findVal(styleAttr.attribute_value_list, ['Anime', '動漫', 'Cartoon']);
-                        newSpecs.style = {
-                            attrId: styleAttr.attribute_id,
-                            valueId: val ? val.value_id : null,
-                            display: val ? val.display_value_name : '(Not Found)'
-                        };
+                        const val = findVal(styleAttr.attribute_value_list, ['Anime', '動漫']);
+                        newSpecs.style = { attrId: styleAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
                     }
-
-                    // 4. Feature (Painted/已上色)
-                    const featAttr = findAttr(['Feature', '特性', '屬性']);
+                    // Feature (Painted)
+                    const featAttr = findAttr(['Feature', '特性']);
                     if (featAttr) {
-                        const val = findVal(featAttr.attribute_value_list, ['Painted', '已上色', 'Finished']);
-                        newSpecs.feature = {
-                            attrId: featAttr.attribute_id,
-                            valueId: val ? val.value_id : null,
-                            display: val ? val.display_value_name : '(Not Found)'
-                        };
+                        const val = findVal(featAttr.attribute_value_list, ['Painted', '已上色']);
+                        newSpecs.feature = { attrId: featAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
                     }
-
-                    // 5. Warranty (NA/無)
+                    // Warranty (NA)
                     const warAttr = findAttr(['Warranty', '保固']);
                     if (warAttr) {
-                        const val = findVal(warAttr.attribute_value_list, ['No', '無', 'NA', 'None']);
-                        newSpecs.warranty = {
-                            attrId: warAttr.attribute_id,
-                            valueId: val ? val.value_id : null,
-                            display: val ? val.display_value_name : '(Not Found)'
-                        };
+                        const val = findVal(warAttr.attribute_value_list, ['No', '無', 'NA']);
+                        newSpecs.warranty = { attrId: warAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
                     }
-
-                    // 6. Character (Manual)
+                    // Character
                     const charAttr = findAttr(['Character', '角色', '人物']);
                     if (charAttr) {
                         newSpecs.character.attrId = charAttr.attribute_id;
                     }
-
-                    setSpecs(newSpecs); // update state
+                    setSpecs(newSpecs);
                 }
             })
             .catch(err => console.error('Attribute fetch error:', err))
             .finally(() => setIsLoadingBrands(false))
-
     }, [formData.category, accessToken, shopId]);
 
 
@@ -295,7 +240,6 @@ function NewProduct() {
     const handleTranslate = async (field) => {
         const text = field === 'character' ? characterInput : formData[field]
         if (!text) return
-
         setTranslating(prev => ({ ...prev, [field]: true }))
         try {
             const response = await fetch('/api/ai/translate', {
@@ -306,7 +250,6 @@ function NewProduct() {
             const result = await response.json()
             if (result.status === 'success') {
                 if (field === 'character') {
-                    // Character入力の場合は、翻訳結果をセット
                     setSpecs(prev => ({
                         ...prev,
                         character: { ...prev.character, text: result.translation, translated: result.translation }
@@ -318,7 +261,7 @@ function NewProduct() {
                 alert('翻訳エラー: ' + result.message)
             }
         } catch (e) {
-            alert('翻訳エラーが発生しました')
+            alert('翻訳エラー: ' + e.message)
         } finally {
             setTranslating(prev => ({ ...prev, [field]: false }))
         }
@@ -331,7 +274,6 @@ function NewProduct() {
             const result = await getItemDetail(accessToken, shopId, sourceItemId)
             if (result.response && result.response.item_list && result.response.item_list.length > 0) {
                 const item = result.response.item_list[0]
-                console.log("Source item details:", item)
                 if (item.category_id) {
                     setFormData(prev => ({ ...prev, category: item.category_id }))
                     setCategories(prev => {
@@ -347,7 +289,6 @@ function NewProduct() {
                 alert('商品情報の取得に失敗しました。IDが正しいか確認してください。')
             }
         } catch (e) {
-            console.error(e)
             alert('取得中にエラーが発生しました')
         } finally {
             setIsFetchingSource(false)
@@ -394,7 +335,6 @@ function NewProduct() {
                 }
             }
         } catch (err) {
-            console.error('Upload error:', err)
             alert('画像アップロード中にエラーが発生しました')
         } finally {
             setIsUploading(false)
@@ -409,111 +349,59 @@ function NewProduct() {
         e.preventDefault()
         if (isSubmitting) return
 
-        if (!formData.category) {
-            alert('カテゴリを選択してください')
-            return
-        }
-        if (!formData.brandId) {
-            alert('ブランドを選択してください')
-            return
-        }
-
+        if (!formData.category) { alert('カテゴリを選択してください'); return }
+        if (!formData.brandId) { alert('ブランドを選択してください'); return }
         const validImages = formData.images.filter(img => img.status === 'done' && img.id)
-        if (validImages.length === 0) {
-            alert('画像を少なくとも1枚アップロードしてください')
-            return
-        }
+        if (validImages.length === 0) { alert('画像を少なくとも1枚アップロードしてください'); return }
 
         setIsSubmitting(true)
 
         try {
             const imageIdList = validImages.map(img => img.id)
-            const logisticInfoPayload = logistics
-                .filter(l => l.enabled)
-                .map(l => ({
-                    logistic_id: l.logistics_channel_id,
-                    enabled: true
-                }))
-
+            const logisticInfoPayload = logistics.filter(l => l.enabled).map(l => ({ logistic_id: l.logistics_channel_id, enabled: true }))
             const finalPrice = parseFloat(formData.price)
             const fullDescription = `${formData.description}\n\n${formData.descriptionFooter}`;
 
-            // --- 属性リスト構築 ---
             const attributes = []
+            // Adult
+            attributes.push({ attribute_id: ADULT_ATTR_ID, attribute_value_list: [{ value_id: ADULT_VALUE_ID }] });
 
-            // 1. Adult Attribute (Verified ID: 11441)
-            attributes.push({
-                attribute_id: ADULT_ATTR_ID,
-                attribute_value_list: [{ value_id: ADULT_VALUE_ID }]
-            });
-
-            // 2. Specifications (detected defaults or processed character)
-            // Helper to add if valid
+            // Specs
             const addSpec = (specObj) => {
                 if (specObj && specObj.attrId && specObj.valueId) {
-                    attributes.push({
-                        attribute_id: specObj.attrId,
-                        attribute_value_list: [{ value_id: specObj.valueId }]
-                    });
+                    attributes.push({ attribute_id: specObj.attrId, attribute_value_list: [{ value_id: specObj.valueId }] });
                 }
             };
-
             addSpec(specs.material);
             addSpec(specs.goodsType);
             addSpec(specs.style);
             addSpec(specs.feature);
             addSpec(specs.warranty);
 
-            // Character Handling (Special Case)
-            // If we have an attrId and some text
-            // Note: If no value_id matches, we might need to skip or try value_unit (if allowed, but usually not for structured specs).
-            // For now, only adding if we somehow mapped it or if it's strictly required.
-            // User requirement: "Characterは手動入力をAI翻訳 ... をペイロードに含めたい"
-            // If it's a list attribute, we can't just send text. 
-            // BUT, for the sake of the request: if we found a value match? We don't have a value match.
-            // *Experimental*: Try sending original_value_name if value_id is missing? (Risk of error)
-            // Since we can't dynamically match user text to ID without the full list in state (we have it in debugAttributes),
-            // let's try this:
+            // Character
             if (specs.character.attrId && specs.character.text) {
-                // Try to find ID from debug attributes list
                 const charAttr = debugAttributes.find(a => a.attribute_id === specs.character.attrId);
                 let matchId = null;
                 if (charAttr && charAttr.attribute_value_list) {
                     const match = charAttr.attribute_value_list.find(v => v.display_value_name === specs.character.text);
                     if (match) matchId = match.value_id;
                 }
-
                 if (matchId) {
-                    attributes.push({
-                        attribute_id: specs.character.attrId,
-                        attribute_value_list: [{ value_id: matchId }]
-                    });
-                } else {
-                    console.warn("Character text value not found in pre-defined list. Skipping to avoid error.");
-                    // Option: Alert user? Or ignore?
+                    attributes.push({ attribute_id: specs.character.attrId, attribute_value_list: [{ value_id: matchId }] });
                 }
             }
-
 
             // Brand
             let brandPayload = undefined;
             if (formData.brandId) {
                 const brandIdNum = parseInt(formData.brandId);
                 let brandName = "";
-
                 const matchOption = brandOptions.find(o => o.value_id === brandIdNum);
-                if (matchOption) {
-                    brandName = matchOption.display_value_name;
-                } else if (brandIdNum === 1146303) {
-                    brandName = "BANPRESTO";
-                } else {
-                    brandName = "General";
-                }
+                if (matchOption) brandName = matchOption.display_value_name;
+                else if (brandIdNum === 1146303) brandName = "BANPRESTO";
+                else brandName = "General";
 
-                brandPayload = {
-                    brand_id: brandIdNum,
-                    original_brand_name: brandName
-                };
+                brandPayload = { brand_id: brandIdNum, original_brand_name: brandName };
             }
 
             const stockVal = parseInt(formData.stock);
@@ -538,28 +426,19 @@ function NewProduct() {
             if (result.error || (result.response && result.response.error)) {
                 const msg = result.message || result.error || (result.response && result.response.message) || "Unknown Error";
                 alert(`出品エラー: ${msg}\n\n(詳細: ${JSON.stringify(result.response || result)})`)
-                console.error("Add Item Error:", result)
             } else {
                 alert('✅ 出品に成功しました！')
                 navigate('/products')
             }
         } catch (e) {
             alert(`出品エラー: ${e.message}`)
-            console.error(e)
         } finally {
             setIsSubmitting(false)
         }
     }
 
-    // 主要ブランド
-    const popularBrands = [
-        'BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'
-    ];
-
-    // フィルタリングされたブランドリスト
-    const filteredBrandOptions = brandOptions.filter(o =>
-        o.display_value_name.toLowerCase().includes(brandFilter.toLowerCase())
-    );
+    const popularBrands = ['BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'];
+    const filteredBrandOptions = brandOptions.filter(o => o.display_value_name.toLowerCase().includes(brandFilter.toLowerCase()));
 
     return (
         <div className="page-container animate-fade-in">
@@ -577,32 +456,25 @@ function NewProduct() {
             ) : (
                 <form onSubmit={handleSubmit}>
                     <div className="grid-2">
+                        {/* LEFT COLUMN */}
                         <div className="card">
                             <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
 
-                            {/* デバッグ情報表示エリア */}
                             {debugAttributes && (
                                 <details style={{ marginBottom: '20px', background: '#f5f5f5', padding: '10px', borderRadius: '4px' }}>
-                                    <summary style={{ cursor: 'pointer', fontSize: '0.9em', fontWeight: 'bold' }}>🔧 属性デバッグ情報 (クリック)</summary>
+                                    <summary style={{ cursor: 'pointer', fontSize: '0.9em', fontWeight: 'bold' }}>🔧 属性デバッグ情報</summary>
                                     <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '0.8em', marginTop: '10px' }}>
                                         <pre>{JSON.stringify(debugAttributes, null, 2)}</pre>
                                     </div>
                                     <div style={{ marginTop: '10px', fontSize: '0.9em' }}>
-                                        <strong>Specs Detected:</strong><br />
-                                        Mat: {specs.material.display}<br />
-                                        Type: {specs.goodsType.display}<br />
-                                        Style: {specs.style.display}<br />
-                                        Feat: {specs.feature.display}<br />
-                                        Warr: {specs.warranty.display}<br />
-                                        Char AttrID: {specs.character.attrId || 'None'}
+                                        <strong>Specs:</strong> Material={specs.material.display}, Type={specs.goodsType.display}, Style={specs.style.display}
                                     </div>
                                 </details>
                             )}
 
-                            {/* 既存商品からコピー */}
                             <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--color-border)' }}>
                                 <label style={{ fontSize: '0.85em', fontWeight: 600, marginBottom: '8px', display: 'block', color: 'var(--color-text-secondary)' }}>
-                                    🔧 既存の商品IDからコピー
+                                    🔧 既存商品からコピー
                                 </label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <input type="text" className="form-input" style={{ height: '36px', fontSize: '13px' }} placeholder="Item ID" value={sourceItemId} onChange={(e) => setSourceItemId(e.target.value)} />
@@ -614,231 +486,117 @@ function NewProduct() {
 
                             <div className="form-group">
                                 <label className="form-label">商品名 *</label>
-                                <input type="text" name="name" className="form-input" placeholder="日本語で入力してAI翻訳できます" value={formData.name} onChange={handleChange} required />
+                                <input type="text" name="name" className="form-input" placeholder="日本語で入力してAI翻訳" value={formData.name} onChange={handleChange} required />
                                 <div style={{ marginTop: '4px', textAlign: 'right' }}>
-                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('name')} disabled={translating.name || !formData.name}>
-                                        {translating.name ? '翻訳中...' : '✨ AI翻訳'}
-                                    </button>
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('name')} disabled={translating.name || !formData.name}>✨ AI翻訳</button>
                                 </div>
                             </div>
 
                             <div className="form-group">
                                 <label className="form-label">商品説明</label>
-                                <textarea name="description" className="form-input form-textarea" placeholder="日本語で詳細を入力..." value={formData.description} onChange={handleChange} />
+                                <textarea name="description" className="form-input form-textarea" placeholder="日本語で入力..." value={formData.description} onChange={handleChange} />
                                 <div style={{ marginTop: '4px', textAlign: 'right' }}>
-                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('description')} disabled={translating.description || !formData.description}>
-                                        {translating.description ? '翻訳中...' : '✨ AI翻訳'}
-                                    </button>
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('description')} disabled={translating.description || !formData.description}>✨ AI翻訳</button>
                                 </div>
                             </div>
 
                             <div className="form-group">
                                 <label className="form-label">共通フッター (自動挿入)</label>
-                                <textarea
-                                    name="descriptionFooter"
-                                    className="form-input form-textarea"
-                                    style={{ height: '150px', background: '#f9f9f9', fontSize: '0.9em' }}
-                                    value={formData.descriptionFooter}
-                                    onChange={handleChange}
-                                />
-                                <p style={{ fontSize: '0.8em', color: '#666', marginTop: '4px' }}>※この内容は商品説明の最後に追加されます。</p>
+                                <textarea name="descriptionFooter" className="form-input form-textarea" style={{ height: '150px', background: '#f9f9f9', fontSize: '0.9em' }} value={formData.descriptionFooter} onChange={handleChange} />
                             </div>
 
                             <div className="form-group">
                                 <label className="form-label">
-                                    カテゴリ *
-                                    {detectedCategory && <span style={{ fontSize: '0.8em', color: 'var(--color-success)', marginLeft: '8px' }}>{detectedCategory.name}</span>}
+                                    カテゴリ * {detectedCategory && <span style={{ fontSize: '0.8em', color: 'var(--color-success)', marginLeft: '8px' }}>{detectedCategory.name}</span>}
                                 </label>
                                 <select name="category" className="form-input form-select" value={formData.category} onChange={handleChange} required disabled={isLoadingCategories}>
                                     <option value="">{isLoadingCategories ? '読み込み中...' : 'カテゴリを選択'}</option>
                                     {categories.map((cat) => (
                                         <option key={cat.category_id} value={cat.category_id}>
-                                            {cat.category_id === 101385 ? '◎ ' : /Figure|Toy|Hobby|公仔|模型/i.test(cat.display_category_name) ? '★ ' : ''}
+                                            {cat.category_id === 101385 ? '◎ ' : /Figure|Toy|Hobby/i.test(cat.display_category_name) ? '★ ' : ''}
                                             {cat.display_category_name}
                                         </option>
                                     ))}
                                 </select>
                             </div>
 
-                            {/* ブランド選択UI */}
                             <div className="form-group">
-                                <label className="form-label">
-                                    ブランド (Brand) *
-                                </label>
+                                <label className="form-label">品牌 (Brand) *</label>
                                 <div style={{ background: 'var(--color-bg-secondary)', padding: '12px', borderRadius: '8px' }}>
-                                    {/* クイック選択 */}
                                     {brandOptions.length > 0 && (
-                                        <div style={{ marginBottom: '8px' }}>
-                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                                {popularBrands.map(brandName => {
-                                                    let match = brandOptions.find(o => o.display_value_name.toLowerCase() === brandName.toLowerCase())
-                                                    if (!match) match = brandOptions.find(o => o.display_value_name.toLowerCase().includes(brandName.toLowerCase()))
-                                                    if (match) {
-                                                        return (
-                                                            <button
-                                                                key={match.value_id}
-                                                                type="button"
-                                                                className={`btn btn-sm ${formData.brandId == match.value_id ? 'btn-primary' : 'btn-secondary'}`}
-                                                                onClick={() => setFormData(prev => ({ ...prev, brandId: match.value_id.toString() }))}
-                                                                style={{ fontSize: '11px', padding: '2px 8px', height: 'auto', borderRadius: '12px' }}
-                                                            >
-                                                                {match.display_value_name}
-                                                            </button>
-                                                        )
-                                                    }
-                                                    return null
-                                                })}
-                                            </div>
+                                        <div style={{ marginBottom: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            {popularBrands.map(brandName => {
+                                                let match = brandOptions.find(o => o.display_value_name.toLowerCase().includes(brandName.toLowerCase()));
+                                                if (match) return <button key={match.value_id} type="button" className={`btn btn-sm ${formData.brandId == match.value_id ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFormData(prev => ({ ...prev, brandId: match.value_id.toString() }))} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '12px' }}>{match.display_value_name}</button>;
+                                                return null;
+                                            })}
                                         </div>
                                     )}
-
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <input
-                                                type="text"
-                                                className="form-input"
-                                                placeholder="ブランド名を検索..."
-                                                value={brandFilter}
-                                                onChange={(e) => setBrandFilter(e.target.value)}
-                                                style={{ flex: 1 }}
-                                            />
-                                        </div>
-                                        <select
-                                            className="form-input form-select"
-                                            value={formData.brandId}
-                                            onChange={handleChange}
-                                            name="brandId"
-                                            size={5}
-                                            style={{ height: 'auto' }}
-                                        >
-                                            <option value="">-- 一覧から選択 --</option>
-                                            {filteredBrandOptions.length > 0 ? (
-                                                filteredBrandOptions.slice(0, 100).map(opt => (
-                                                    <option key={opt.value_id} value={opt.value_id}>
-                                                        {opt.display_value_name}
-                                                    </option>
-                                                ))
-                                            ) : (
-                                                <option value="1146303">BANPRESTO (Recommended)</option>
-                                            )}
-                                        </select>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                                            <span style={{ fontSize: '0.9em' }}>または ID直接入力:</span>
-                                            <input
-                                                type="text"
-                                                className="form-input"
-                                                style={{ width: '120px' }}
-                                                placeholder="例: 1146303"
-                                                value={formData.brandId}
-                                                onChange={handleChange}
-                                                name="brandId"
-                                            />
-                                        </div>
-                                    </div>
+                                    <select className="form-input form-select" value={formData.brandId} onChange={handleChange} name="brandId">
+                                        <option value="">-- 一覧から選択 --</option>
+                                        {filteredBrandOptions.length > 0 ? filteredBrandOptions.slice(0, 100).map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>) : <option value="1146303">BANPRESTO (Recommended)</option>}
+                                    </select>
                                 </div>
                             </div>
-
-                            {/* --- Specifications Section --- */}
-                            <div className="card" style={{ marginTop: '20px', border: '1px solid #e0e0e0' }}>
-                                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    📋 Specifications (自動設定)
-                                </h3>
-
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                    {/* Material */}
-                                    <div className="form-group">
-                                        <label className="form-label">Material (PVC)</label>
-                                        <input type="text" className="form-input" value={specs.material.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
-                                    </div>
-                                    {/* Goods Type */}
-                                    <div className="form-group">
-                                        <label className="form-label">Goods Type (Figure)</label>
-                                        <input type="text" className="form-input" value={specs.goodsType.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
-                                    </div>
-                                    {/* Style */}
-                                    <div className="form-group">
-                                        <label className="form-label">Style (Anime)</label>
-                                        <input type="text" className="form-input" value={specs.style.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
-                                    </div>
-                                    {/* Feature */}
-                                    <div className="form-group">
-                                        <label className="form-label">Material Feature (Painted)</label>
-                                        <input type="text" className="form-input" value={specs.feature.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
-                                    </div>
-                                    {/* Warranty */}
-                                    <div className="form-group">
-                                        <label className="form-label">Warranty Type (NA)</label>
-                                        <input type="text" className="form-input" value={specs.warranty.display || '(Not Found)'} readOnly style={{ background: '#f5f5f5' }} />
-                                    </div>
-
-                                    {/* Character */}
-                                    <div className="form-group">
-                                        <label className="form-label">Character (Manual Input)</label>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <input
-                                                type="text"
-                                                className="form-input"
-                                                placeholder="例: 孫悟空 (日本語)"
-                                                value={characterInput}
-                                                onChange={(e) => setCharacterInput(e.target.value)}
-                                            />
-                                            <button
-                                                type="button"
-                                                className="btn btn-secondary"
-                                                onClick={() => handleTranslate('character')}
-                                                disabled={translating.character || !characterInput}
-                                                style={{ whiteSpace: 'nowrap' }}
-                                            >
-                                                {translating.character ? '翻訳中' : '翻訳'}
-                                            </button>
-                                        </div>
-                                        {specs.character.text && (
-                                            <div style={{ marginTop: '4px', fontSize: '0.9em', color: 'green' }}>
-                                                Translated: <strong>{specs.character.text}</strong>
-                                                {specs.character.attrId ? '' : ' (AttrID not found)'}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-
                         </div>
 
+                        {/* RIGHT COLUMN */}
                         <div className="card">
                             <h3 className="card-title">価格・在庫・物流</h3>
-
                             <div className="form-group">
                                 <label className="form-label">仕入れ原価 (JPY)</label>
                                 <input type="number" name="costPrice" className="form-input" value={formData.costPrice} onChange={handleChange} />
                             </div>
-
                             {priceDetails && (
                                 <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '16px', fontSize: '13px' }}>
                                     <div>推奨価格: <strong>NT${priceDetails.finalTwd.toLocaleString()}</strong></div>
                                 </div>
                             )}
-
-                            <div className="form-group">
-                                <label className="form-label">販売価格 (TWD) *</label>
-                                <input type="number" name="price" className="form-input" value={formData.price} onChange={handleChange} required />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">在庫数 *</label>
-                                <input type="number" name="stock" className="form-input" value={formData.stock} onChange={handleChange} required />
-                            </div>
-
+                            <div className="form-group"><label className="form-label">販売価格 (TWD) *</label><input type="number" name="price" className="form-input" value={formData.price} onChange={handleChange} required /></div>
+                            <div className="form-group"><label className="form-label">在庫数 *</label><input type="number" name="stock" className="form-input" value={formData.stock} onChange={handleChange} required /></div>
                             <div className="form-group">
                                 <label className="form-label">物流設定</label>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                    {logistics.map(l => (
-                                        <label key={l.logistics_channel_id} style={{ display: 'flex', align: 'center', gap: '8px' }}>
-                                            <input type="checkbox" checked={l.enabled} onChange={(e) => setLogistics(prev => prev.map(item => item.logistics_channel_id === l.logistics_channel_id ? { ...item, enabled: e.target.checked } : item))} />
-                                            <span>{l.logistics_channel_name}</span>
-                                        </label>
-                                    ))}
+                                {logistics.map(l => (
+                                    <label key={l.logistics_channel_id} style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                                        <input type="checkbox" checked={l.enabled} onChange={(e) => setLogistics(prev => prev.map(item => item.logistics_channel_id === l.logistics_channel_id ? { ...item, enabled: e.target.checked } : item))} />
+                                        {l.logistics_channel_name}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* FULL WIDTH SPECIFICATIONS */}
+                    <div className="card" style={{ marginTop: '20px', border: '1px solid #d0d0d0', background: '#fafafa' }}>
+                        <h3 className="card-title">📋 Specifications (自動設定)</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                            <div className="form-group">
+                                <label className="form-label">Material (PVC)</label>
+                                <input type="text" className="form-input" value={specs.material.display} readOnly style={{ background: '#eef' }} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Goods Type (Figure)</label>
+                                <input type="text" className="form-input" value={specs.goodsType.display} readOnly style={{ background: '#eef' }} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Style (Anime)</label>
+                                <input type="text" className="form-input" value={specs.style.display} readOnly style={{ background: '#eef' }} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Feature (Painted)</label>
+                                <input type="text" className="form-input" value={specs.feature.display} readOnly style={{ background: '#eef' }} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Warranty (NA)</label>
+                                <input type="text" className="form-input" value={specs.warranty.display} readOnly style={{ background: '#eef' }} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Character (Manual)</label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <input type="text" className="form-input" placeholder="例: 孫悟空" value={characterInput} onChange={(e) => setCharacterInput(e.target.value)} />
+                                    <button type="button" className="btn btn-secondary" onClick={() => handleTranslate('character')} disabled={translating.character}>翻訳</button>
                                 </div>
+                                {specs.character.text && <div style={{ marginTop: '4px', color: 'green', fontSize: '0.9em' }}>Trans: {specs.character.text}</div>}
                             </div>
                         </div>
                     </div>
