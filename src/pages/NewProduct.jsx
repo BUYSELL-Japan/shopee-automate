@@ -25,7 +25,12 @@ function NewProduct() {
         stock: '',
         category: '101385', // デフォルト
         brandId: '', // ブランドID (選択式)
-        adultId: '', // 成人向け属性の値ID
+        adultId: '', // 成人向け属性の値ID (選択式)
+
+        // 手動オーバーライド用
+        manualAttrId: '101044',
+        manualAttrValueId: '',
+
         sku: '',
         weight: '0.5',
         images: []
@@ -38,10 +43,13 @@ function NewProduct() {
     // ブランド・属性関連
     const [brandAttributeId, setBrandAttributeId] = useState(null)
     const [brandOptions, setBrandOptions] = useState([])
-    const [adultAttributeId, setAdultAttributeId] = useState(null) // Adult属性ID (101044)
-    const [adultOptions, setAdultOptions] = useState([])           // Adult属性の選択肢
+    const [adultAttributeId, setAdultAttributeId] = useState(null)
+    const [adultOptions, setAdultOptions] = useState([])
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
     const [brandFilter, setBrandFilter] = useState('')
+
+    // デバッグ用
+    const [debugAttributes, setDebugAttributes] = useState(null)
 
     // その他UI
     const [isLoadingCategories, setIsLoadingCategories] = useState(false)
@@ -55,7 +63,6 @@ function NewProduct() {
     const [sourceItemId, setSourceItemId] = useState('47000206128')
     const [isFetchingSource, setIsFetchingSource] = useState(false)
 
-    // カテゴリー＆物流取得
     useEffect(() => {
         if (isConnected && accessToken && shopId) {
             setIsLoadingCategories(true)
@@ -129,29 +136,30 @@ function NewProduct() {
         }
     }, [isConnected, accessToken, shopId])
 
-    // ブランド・属性情報の取得 (カテゴリ変更時に発火)
+    // ブランド・属性情報の取得
     useEffect(() => {
         if (!formData.category || !accessToken || !shopId) return;
 
         setIsLoadingBrands(true)
         setBrandOptions([])
         setBrandAttributeId(null)
-        setFormData(prev => ({ ...prev, brandId: '', adultId: '' })) // リセット
+        setFormData(prev => ({ ...prev, brandId: '', adultId: '' }))
         setBrandFilter('')
         setAdultAttributeId(null)
         setAdultOptions([])
+        setDebugAttributes(null)
 
         getAttributes(accessToken, shopId, parseInt(formData.category))
             .then(result => {
+                console.log("Feature: getAttributes response", result);
                 if (result.response && result.response.attribute_list) {
                     const attrs = result.response.attribute_list;
-                    console.log("Category Attributes:", attrs);
+                    setDebugAttributes(attrs); // デバッグ用に保存
 
-                    // Brand属性を特定
+                    // Brand
                     const brandAttr = attrs.find(a =>
                         /Brand|品牌|メーカー/i.test(a.display_attribute_name) || a.mandatory
                     );
-
                     if (brandAttr) {
                         setBrandAttributeId(brandAttr.attribute_id);
                         if (brandAttr.attribute_value_list) {
@@ -159,21 +167,26 @@ function NewProduct() {
                         }
                     }
 
-                    // Adult属性 (101044) を特定
+                    // Adult (101044)
                     const adultAttr = attrs.find(a =>
                         a.attribute_id === 101044 || /Adult|成人/i.test(a.display_attribute_name)
                     );
                     if (adultAttr) {
+                        console.log("✅ Adult attribute found:", adultAttr);
                         setAdultAttributeId(adultAttr.attribute_id);
                         if (adultAttr.attribute_value_list) {
                             setAdultOptions(adultAttr.attribute_value_list);
-                            // デフォルトで「No/否」を選択
+                            // デフォルト設定
                             const noVal = adultAttr.attribute_value_list.find(v => /No|否|いいえ/i.test(v.display_value_name));
                             if (noVal) {
                                 setFormData(prev => ({ ...prev, adultId: noVal.value_id.toString() }));
-                                console.log(`Set default Adult=No value ID: ${noVal.value_id}`);
+                                console.log(`✅ Auto-selected Adult=No: ${noVal.value_id}`);
+                            } else {
+                                console.warn("⚠️ Adult=No option not found in:", adultAttr.attribute_value_list);
                             }
                         }
+                    } else {
+                        console.warn("⚠️ Adult attribute (101044) NOT found in list");
                     }
                 }
             })
@@ -183,7 +196,6 @@ function NewProduct() {
     }, [formData.category, accessToken, shopId]);
 
 
-    // 価格計算ロジック
     useEffect(() => {
         const cost = parseFloat(formData.costPrice)
         if (!isNaN(cost) && cost > 0) {
@@ -232,7 +244,6 @@ function NewProduct() {
         }
     }
 
-    // 既存商品情報取得
     const handleFetchSourceItem = async () => {
         if (!sourceItemId || !accessToken || !shopId) return
         setIsFetchingSource(true)
@@ -241,7 +252,6 @@ function NewProduct() {
             if (result.response && result.response.item_list && result.response.item_list.length > 0) {
                 const item = result.response.item_list[0]
                 console.log("Source item details:", item)
-
                 if (item.category_id) {
                     setFormData(prev => ({ ...prev, category: item.category_id }))
                     setCategories(prev => {
@@ -329,12 +339,6 @@ function NewProduct() {
             return
         }
 
-        // Adult属性チェック
-        if (adultAttributeId && !formData.adultId) {
-            alert('成人向け属性(Adult products)を選択してください')
-            return
-        }
-
         const validImages = formData.images.filter(img => img.status === 'done' && img.id)
         if (validImages.length === 0) {
             alert('画像を少なくとも1枚アップロードしてください')
@@ -345,8 +349,6 @@ function NewProduct() {
 
         try {
             const imageIdList = validImages.map(img => img.id)
-
-            // 物流情報作成
             const logisticInfoPayload = logistics
                 .filter(l => l.enabled)
                 .map(l => ({
@@ -359,15 +361,21 @@ function NewProduct() {
             // 属性リスト構築
             const attributes = []
 
-            // Adult属性の追加 (必須)
-            if (adultAttributeId && formData.adultId) {
+            // Adult属性 (101044)
+            // 自動選択値または手動入力値を使用
+            const adultValId = formData.adultId || formData.manualAttrValueId;
+            const adultAttrId = adultAttributeId || (formData.manualAttrId ? parseInt(formData.manualAttrId) : 101044);
+
+            if (adultValId) {
                 attributes.push({
-                    attribute_id: adultAttributeId,
-                    attribute_value_list: [{ value_id: parseInt(formData.adultId) }]
+                    attribute_id: adultAttrId,
+                    attribute_value_list: [{ value_id: parseInt(adultValId) }]
                 });
+            } else {
+                console.warn("Adult attribute skipped (no value provided)");
             }
 
-            // ブランド情報構築
+            // Brand
             let brandPayload = undefined;
             if (formData.brandId) {
                 const brandIdNum = parseInt(formData.brandId);
@@ -451,6 +459,20 @@ function NewProduct() {
                     <div className="grid-2">
                         <div className="card">
                             <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
+
+                            {/* デバッグ情報表示エリア */}
+                            {debugAttributes && (
+                                <details style={{ marginBottom: '20px', background: '#f5f5f5', padding: '10px', borderRadius: '4px' }}>
+                                    <summary style={{ cursor: 'pointer', fontSize: '0.9em', fontWeight: 'bold' }}>🔧 属性デバッグ情報 (クリックで展開)</summary>
+                                    <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '0.8em', marginTop: '10px' }}>
+                                        <pre>{JSON.stringify(debugAttributes, null, 2)}</pre>
+                                    </div>
+                                    <div style={{ marginTop: '10px' }}>
+                                        <strong>Adult Attribute Found?</strong>: {adultAttributeId ? `YES (${adultAttributeId})` : 'NO'} <br />
+                                        <strong>Adult Values:</strong> {JSON.stringify(adultOptions)}
+                                    </div>
+                                </details>
+                            )}
 
                             {/* 既存商品からコピー */}
                             <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--color-border)' }}>
@@ -585,44 +607,56 @@ function NewProduct() {
                             </div>
 
                             {/* 成人向け属性 (Adult) UI */}
-                            {adultAttributeId && (
-                                <div className="form-group" style={{ background: '#fff0f0', padding: '10px', borderRadius: '8px', border: '1px solid #ffcccb' }}>
-                                    <label className="form-label" style={{ color: '#d32f2f' }}>
-                                        成人向け商品 (Adult products) *
-                                    </label>
+                            <div className="form-group" style={{ background: '#fff0f0', padding: '10px', borderRadius: '8px', border: '1px solid #ffcccb' }}>
+                                <label className="form-label" style={{ color: '#d32f2f' }}>
+                                    成人向け商品 (Adult products) *
+                                    <span style={{ fontSize: '0.8em', color: '#666', fontWeight: 'normal' }}> (Attr ID: {adultAttributeId || 101044})</span>
+                                </label>
+
+                                {adultOptions.length > 0 ? (
                                     <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                                        {adultOptions.length > 0 ? (
-                                            adultOptions.map(opt => (
-                                                <label key={opt.value_id} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontWeight: 600 }}>
-                                                    <input
-                                                        type="radio"
-                                                        name="adultId"
-                                                        value={opt.value_id}
-                                                        checked={formData.adultId == opt.value_id}
-                                                        onChange={handleChange}
-                                                    />
-                                                    {opt.display_value_name}
-                                                </label>
-                                            ))
-                                        ) : (
-                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                        {adultOptions.map(opt => (
+                                            <label key={opt.value_id} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontWeight: 600 }}>
                                                 <input
-                                                    type="text"
-                                                    className="form-input"
-                                                    placeholder="Value ID (Option not found)"
-                                                    value={formData.adultId}
-                                                    onChange={handleChange}
+                                                    type="radio"
                                                     name="adultId"
+                                                    value={opt.value_id}
+                                                    checked={formData.adultId == opt.value_id}
+                                                    onChange={handleChange}
                                                 />
-                                                <span style={{ fontSize: '0.8em', color: 'red' }}>値が取得できません。IDを手入力してください。</span>
-                                            </div>
-                                        )}
+                                                {opt.display_value_name} (ID: {opt.value_id})
+                                            </label>
+                                        ))}
                                     </div>
-                                    <p style={{ fontSize: '0.8em', color: '#666', marginTop: '4px' }}>
-                                        ※必須項目です。通常は「いいえ/No」を選択してください。
-                                    </p>
-                                </div>
-                            )}
+                                ) : (
+                                    <div>
+                                        <p style={{ fontSize: '0.8em', color: 'red', marginBottom: '8px' }}>選択肢が取得できていません。以下に手動入力してください。</p>
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                            <label style={{ fontSize: '0.8em' }}>Attr ID:</label>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                style={{ width: '80px' }}
+                                                value={formData.manualAttrId}
+                                                onChange={handleChange}
+                                                name="manualAttrId"
+                                                placeholder="101044"
+                                            />
+                                            <label style={{ fontSize: '0.8em' }}>Value ID:</label>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                style={{ width: '100px' }}
+                                                value={formData.manualAttrValueId}
+                                                onChange={handleChange}
+                                                name="manualAttrValueId"
+                                                placeholder="例: 0 or ID"
+                                            />
+                                            <span style={{ fontSize: '0.8em' }}>← 「いいえ」のValue IDを入力</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
 
                         </div>
 
