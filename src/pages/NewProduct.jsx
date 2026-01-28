@@ -157,7 +157,9 @@ function NewProduct() {
             .then(result => {
                 if (result.response && result.response.attribute_list) {
                     const attrs = result.response.attribute_list;
-                    setDebugAttributes(attrs);
+                    // Note: Not setting debugAttributes automatically here to avoid clutter if fetch works but user only wants manual button
+                    // But good for verifying load.
+                    // setDebugAttributes(attrs); 
 
                     const brandAttr = attrs.find(a => /Brand|品牌|メーカー/i.test(a.display_attribute_name) || a.mandatory);
                     if (brandAttr) {
@@ -440,6 +442,25 @@ function NewProduct() {
     const popularBrands = ['BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'];
     const filteredBrandOptions = brandOptions.filter(o => o.display_value_name.toLowerCase().includes(brandFilter.toLowerCase()));
 
+    // --- MANUAL DEBUG FUNCTION ---
+    const handleManualDebug = async () => {
+        if (!accessToken || !shopId) {
+            alert("API接続情報がありません。設定を確認してください。");
+            return;
+        }
+        try {
+            // Force fetch category 101385
+            const res = await getAttributes(accessToken, shopId, 101385);
+            console.log("Manual Debug Res:", res);
+            const data = res.response && res.response.attribute_list ? res.response.attribute_list : res;
+            setDebugAttributes(data);
+            // Also alert success
+            alert("データ取得しました。画面上の赤いウィンドウからコピーしてください。");
+        } catch (e) {
+            alert("データ取得エラー: " + e.message);
+        }
+    };
+
     const SpecSelect = ({ label, specKey, specData }) => (
         <div className="form-group">
             <label className="form-label">{label}</label>
@@ -457,37 +478,41 @@ function NewProduct() {
     return (
         <div className="page-container animate-fade-in">
 
-            {/* OVERLAY for Debugging Attributes */}
+            {/* MANUAL DEBUG OVERLAY */}
             {debugAttributes && (
                 <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '350px',
-                    background: 'white',
-                    borderBottom: '5px solid red',
-                    zIndex: 99999,
-                    overflow: 'auto',
-                    padding: '20px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+                    background: 'rgba(0,0,0,0.8)', zIndex: 99999, padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center'
                 }}>
-                    <h3>⚠️ 属性ID抽出モード</h3>
-                    <p>自動取得するコードを書くために、以下のJSONデータをすべてコピーして、チャットに貼り付けてください。</p>
-                    <textarea
-                        style={{ width: '100%', height: '250px', fontSize: '10px', fontFamily: 'monospace' }}
-                        value={JSON.stringify(debugAttributes, null, 2)}
-                        readOnly
-                    />
-                    <button onClick={() => setDebugAttributes(null)} style={{ position: 'absolute', top: 10, right: 10, padding: '10px' }}>閉じる</button>
+                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', width: '90%', height: '80%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <h3>⚠️ 属性ID抽出データ</h3>
+                        <p>以下のデータをすべて選択してコピーし、チャットに貼り付けてください。</p>
+                        <textarea
+                            style={{ flex: 1, fontSize: '11px', fontFamily: 'monospace', marginBottom: '10px' }}
+                            value={JSON.stringify(debugAttributes, null, 2)}
+                            readOnly
+                        />
+                        <button onClick={() => setDebugAttributes(null)} className="btn btn-primary" style={{ alignSelf: 'flex-end' }}>閉じる</button>
+                    </div>
                 </div>
             )}
 
-
             <header className="page-header">
-                <div>
-                    <h1 className="page-title">新規出品</h1>
-                    <p className="page-subtitle">Shopeeに新しい商品を出品します</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <h1 className="page-title">新規出品</h1>
+                        <p className="page-subtitle">Shopeeに新しい商品を出品します</p>
+                    </div>
+                    {/* MANUAL DEBUG BUTTON */}
+                    <div>
+                        <button type="button" onClick={handleManualDebug} style={{
+                            background: '#d32f2f', color: 'white', padding: '10px 20px',
+                            fontWeight: 'bold', border: 'none', borderRadius: '4px', cursor: 'pointer',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                        }}>
+                            🛠 属性データ取得 (Click Here)
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -501,8 +526,6 @@ function NewProduct() {
                         {/* LEFT COLUMN */}
                         <div className="card">
                             <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
-
-                            {/* Original Debug Area Hidden due to Overlay */}
 
                             <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--color-border)' }}>
                                 <label style={{ fontSize: '0.85em', fontWeight: 600, marginBottom: '8px', display: 'block', color: 'var(--color-text-secondary)' }}>
