@@ -48,14 +48,14 @@ function NewProduct() {
         images: []
     })
 
-    // スペック用状態
+    // スペック用状態 (optionsを追加)
     const [specs, setSpecs] = useState({
-        material: { attrId: null, valueId: null, display: '' },
-        goodsType: { attrId: null, valueId: null, display: '' },
-        style: { attrId: null, valueId: null, display: '' },
-        feature: { attrId: null, valueId: null, display: '' },
-        warranty: { attrId: null, valueId: null, display: '' },
-        character: { attrId: null, valueId: null, text: '', translated: '' }
+        material: { attrId: null, valueId: '', options: [] },
+        goodsType: { attrId: null, valueId: '', options: [] },
+        style: { attrId: null, valueId: '', options: [] },
+        feature: { attrId: null, valueId: '', options: [] },
+        warranty: { attrId: null, valueId: '', options: [] },
+        character: { attrId: null, valueId: '', options: [], text: '', translated: '' }
     })
 
     // キャラクター入力用
@@ -139,13 +139,14 @@ function NewProduct() {
         setBrandAttributeId(null)
         setBrandFilter('')
         setDebugAttributes(null)
+        // Reset specs but keep format
         setSpecs({
-            material: { attrId: null, valueId: null, display: '' },
-            goodsType: { attrId: null, valueId: null, display: '' },
-            style: { attrId: null, valueId: null, display: '' },
-            feature: { attrId: null, valueId: null, display: '' },
-            warranty: { attrId: null, valueId: null, display: '' },
-            character: { attrId: null, valueId: null, text: '', translated: '' }
+            material: { attrId: null, valueId: '', options: [] },
+            goodsType: { attrId: null, valueId: '', options: [] },
+            style: { attrId: null, valueId: '', options: [] },
+            feature: { attrId: null, valueId: '', options: [] },
+            warranty: { attrId: null, valueId: '', options: [] },
+            character: { attrId: null, valueId: '', options: [], text: '', translated: '' }
         });
         setCharacterInput('');
 
@@ -170,41 +171,38 @@ function NewProduct() {
                     const findAttr = (keywords) => attrs.find(a => keywords.some(k => a.display_attribute_name.toLowerCase().includes(k.toLowerCase())));
                     const findVal = (list, keywords) => list ? list.find(v => keywords.some(k => v.display_value_name.toLowerCase().includes(k.toLowerCase()))) : null;
 
-                    // Material (PVC)
-                    const matAttr = findAttr(['Material', '材質']);
-                    if (matAttr) {
-                        const val = findVal(matAttr.attribute_value_list, ['PVC']);
-                        newSpecs.material = { attrId: matAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
-                    }
-                    // Goods Type (Figure)
-                    const typeAttr = findAttr(['Goods Type', 'Type', 'Commodity', '商品類型']);
-                    if (typeAttr) {
-                        const val = findVal(typeAttr.attribute_value_list, ['Figure', '手辦', '公仔']);
-                        newSpecs.goodsType = { attrId: typeAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
-                    }
-                    // Style (Anime)
-                    const styleAttr = findAttr(['Style', '風格']);
-                    if (styleAttr) {
-                        const val = findVal(styleAttr.attribute_value_list, ['Anime', '動漫']);
-                        newSpecs.style = { attrId: styleAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
-                    }
-                    // Feature (Painted)
-                    const featAttr = findAttr(['Feature', '特性']);
-                    if (featAttr) {
-                        const val = findVal(featAttr.attribute_value_list, ['Painted', '已上色']);
-                        newSpecs.feature = { attrId: featAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
-                    }
-                    // Warranty (NA)
-                    const warAttr = findAttr(['Warranty', '保固']);
-                    if (warAttr) {
-                        const val = findVal(warAttr.attribute_value_list, ['No', '無', 'NA']);
-                        newSpecs.warranty = { attrId: warAttr.attribute_id, valueId: val ? val.value_id : null, display: val ? val.display_value_name : '(Not Found)' };
-                    }
-                    // Character
+                    // Helper to setup spec state
+                    const setupSpec = (attrKey, keywordsAttr, keywordsVal) => {
+                        const attr = findAttr(keywordsAttr);
+                        if (attr) {
+                            const opts = attr.attribute_value_list || [];
+                            const defaultVal = findVal(opts, keywordsVal);
+                            newSpecs[attrKey] = {
+                                attrId: attr.attribute_id,
+                                valueId: defaultVal ? defaultVal.value_id : '', // defaults to detected or empty
+                                options: opts
+                            };
+                        }
+                    };
+
+                    setupSpec('material', ['Material', '材質'], ['PVC']);
+                    setupSpec('goodsType', ['Goods Type', 'Type', 'Commodity', '商品類型'], ['Figure', '手辦', '公仔']);
+                    setupSpec('style', ['Style', '風格'], ['Anime', '動漫', 'Cartoon']);
+                    setupSpec('feature', ['Feature', '特性'], ['Painted', '已上色']);
+                    setupSpec('warranty', ['Warranty', '保固'], ['No', '無', 'NA']);
+
+                    // Character (Manual)
                     const charAttr = findAttr(['Character', '角色', '人物']);
                     if (charAttr) {
-                        newSpecs.character.attrId = charAttr.attribute_id;
+                        newSpecs.character = {
+                            attrId: charAttr.attribute_id,
+                            valueId: '', // no default
+                            options: charAttr.attribute_value_list || [],
+                            text: '',
+                            translated: ''
+                        };
                     }
+
                     setSpecs(newSpecs);
                 }
             })
@@ -250,9 +248,17 @@ function NewProduct() {
             const result = await response.json()
             if (result.status === 'success') {
                 if (field === 'character') {
+                    // Try to auto-select if translated text matches an option
+                    const translated = result.translation;
+                    let matchId = '';
+                    if (specs.character.options.length > 0) {
+                        const match = specs.character.options.find(o => o.display_value_name === translated || o.original_value_name === translated);
+                        if (match) matchId = match.value_id;
+                    }
+
                     setSpecs(prev => ({
                         ...prev,
-                        character: { ...prev.character, text: result.translation, translated: result.translation }
+                        character: { ...prev.character, text: translated, translated: translated, valueId: matchId }
                     }));
                 } else {
                     setFormData(prev => ({ ...prev, [field]: result.translation }))
@@ -298,6 +304,13 @@ function NewProduct() {
     const handleChange = (e) => {
         const { name, value } = e.target
         setFormData((prev) => ({ ...prev, [name]: value }))
+    }
+
+    const handleSpecChange = (key, value) => {
+        setSpecs(prev => ({
+            ...prev,
+            [key]: { ...prev[key], valueId: value }
+        }));
     }
 
     const handleImageUpload = async (e) => {
@@ -369,7 +382,7 @@ function NewProduct() {
             // Specs
             const addSpec = (specObj) => {
                 if (specObj && specObj.attrId && specObj.valueId) {
-                    attributes.push({ attribute_id: specObj.attrId, attribute_value_list: [{ value_id: specObj.valueId }] });
+                    attributes.push({ attribute_id: specObj.attrId, attribute_value_list: [{ value_id: parseInt(specObj.valueId) }] });
                 }
             };
             addSpec(specs.material);
@@ -377,19 +390,7 @@ function NewProduct() {
             addSpec(specs.style);
             addSpec(specs.feature);
             addSpec(specs.warranty);
-
-            // Character
-            if (specs.character.attrId && specs.character.text) {
-                const charAttr = debugAttributes.find(a => a.attribute_id === specs.character.attrId);
-                let matchId = null;
-                if (charAttr && charAttr.attribute_value_list) {
-                    const match = charAttr.attribute_value_list.find(v => v.display_value_name === specs.character.text);
-                    if (match) matchId = match.value_id;
-                }
-                if (matchId) {
-                    attributes.push({ attribute_id: specs.character.attrId, attribute_value_list: [{ value_id: matchId }] });
-                }
-            }
+            addSpec(specs.character);
 
             // Brand
             let brandPayload = undefined;
@@ -440,6 +441,28 @@ function NewProduct() {
     const popularBrands = ['BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'];
     const filteredBrandOptions = brandOptions.filter(o => o.display_value_name.toLowerCase().includes(brandFilter.toLowerCase()));
 
+    // Spec Select Component Helper
+    const SpecSelect = ({ label, specKey, specData }) => (
+        <div className="form-group">
+            <label className="form-label">{label}</label>
+            {specData.attrId ? (
+                <select
+                    className="form-input form-select"
+                    value={specData.valueId}
+                    onChange={(e) => handleSpecChange(specKey, e.target.value)}
+                    style={{ background: specData.valueId ? '#e6fffa' : '#fff' }}
+                >
+                    <option value="">-- Select or Not Found --</option>
+                    {specData.options.map(opt => (
+                        <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>
+                    ))}
+                </select>
+            ) : (
+                <input type="text" className="form-input" value="(Attribute Not Found)" readOnly disabled style={{ background: '#eee' }} />
+            )}
+        </div>
+    );
+
     return (
         <div className="page-container animate-fade-in">
             <header className="page-header">
@@ -467,7 +490,7 @@ function NewProduct() {
                                         <pre>{JSON.stringify(debugAttributes, null, 2)}</pre>
                                     </div>
                                     <div style={{ marginTop: '10px', fontSize: '0.9em' }}>
-                                        <strong>Specs:</strong> Material={specs.material.display}, Type={specs.goodsType.display}, Style={specs.style.display}
+                                        <strong>Specs:</strong> Material={specs.material.valueId}, Type={specs.goodsType.valueId}
                                     </div>
                                 </details>
                             )}
@@ -568,35 +591,38 @@ function NewProduct() {
 
                     {/* FULL WIDTH SPECIFICATIONS */}
                     <div className="card" style={{ marginTop: '20px', border: '1px solid #d0d0d0', background: '#fafafa' }}>
-                        <h3 className="card-title">📋 Specifications (自動設定)</h3>
+                        <h3 className="card-title">📋 Specifications (Select required values)</h3>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                            <SpecSelect label="Material (PVC)" specKey="material" specData={specs.material} />
+                            <SpecSelect label="Goods Type (Figure)" specKey="goodsType" specData={specs.goodsType} />
+                            <SpecSelect label="Style (Anime)" specKey="style" specData={specs.style} />
+                            <SpecSelect label="Feature (Painted)" specKey="feature" specData={specs.feature} />
+                            <SpecSelect label="Warranty (NA)" specKey="warranty" specData={specs.warranty} />
+
                             <div className="form-group">
-                                <label className="form-label">Material (PVC)</label>
-                                <input type="text" className="form-input" value={specs.material.display} readOnly style={{ background: '#eef' }} />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Goods Type (Figure)</label>
-                                <input type="text" className="form-input" value={specs.goodsType.display} readOnly style={{ background: '#eef' }} />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Style (Anime)</label>
-                                <input type="text" className="form-input" value={specs.style.display} readOnly style={{ background: '#eef' }} />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Feature (Painted)</label>
-                                <input type="text" className="form-input" value={specs.feature.display} readOnly style={{ background: '#eef' }} />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Warranty (NA)</label>
-                                <input type="text" className="form-input" value={specs.warranty.display} readOnly style={{ background: '#eef' }} />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Character (Manual)</label>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <input type="text" className="form-input" placeholder="例: 孫悟空" value={characterInput} onChange={(e) => setCharacterInput(e.target.value)} />
-                                    <button type="button" className="btn btn-secondary" onClick={() => handleTranslate('character')} disabled={translating.character}>翻訳</button>
+                                <label className="form-label">Character (Manual or Select)</label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <input type="text" className="form-input" placeholder="例: 孫悟空" value={characterInput} onChange={(e) => setCharacterInput(e.target.value)} />
+                                        <button type="button" className="btn btn-secondary" onClick={() => handleTranslate('character')} disabled={translating.character}>翻訳</button>
+                                    </div>
+                                    {specs.character.text && <div style={{ color: 'green', fontSize: '0.9em' }}>Translated: {specs.character.text}</div>}
+
+                                    {/* Character Select Fallback */}
+                                    {specs.character.attrId && (
+                                        <select
+                                            className="form-input form-select"
+                                            value={specs.character.valueId}
+                                            onChange={(e) => handleSpecChange('character', e.target.value)}
+                                            style={{ background: specs.character.valueId ? '#e6fffa' : '#fff' }}
+                                        >
+                                            <option value="">(Select from list if matched)</option>
+                                            {specs.character.options.map(opt => (
+                                                <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>
+                                            ))}
+                                        </select>
+                                    )}
                                 </div>
-                                {specs.character.text && <div style={{ marginTop: '4px', color: 'green', fontSize: '0.9em' }}>Trans: {specs.character.text}</div>}
                             </div>
                         </div>
                     </div>
