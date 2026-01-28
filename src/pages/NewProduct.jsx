@@ -48,7 +48,7 @@ function NewProduct() {
         images: []
     })
 
-    // スペック用状態 (optionsを追加)
+    // スペック用状態
     const [specs, setSpecs] = useState({
         material: { attrId: null, valueId: '', options: [] },
         goodsType: { attrId: null, valueId: '', options: [] },
@@ -58,7 +58,6 @@ function NewProduct() {
         character: { attrId: null, valueId: '', options: [], text: '', translated: '' }
     })
 
-    // キャラクター入力用
     const [characterInput, setCharacterInput] = useState('')
 
     const [categories, setCategories] = useState([])
@@ -124,7 +123,7 @@ function NewProduct() {
             getLogistics(accessToken, shopId)
                 .then(result => {
                     if (result.response && result.response.logistics_channel_list) {
-                        // ユーザー要望により「蝦皮海外 - 蝦皮店到店（海運）」を除外
+                        // Exclude Sea Shipping
                         const filtered = result.response.logistics_channel_list.filter(l =>
                             l.logistics_channel_name !== '蝦皮海外 - 蝦皮店到店（海運）' &&
                             !l.logistics_channel_name.includes('海運')
@@ -144,7 +143,6 @@ function NewProduct() {
         setBrandAttributeId(null)
         setBrandFilter('')
         setDebugAttributes(null)
-        // Reset specs but keep format
         setSpecs({
             material: { attrId: null, valueId: '', options: [] },
             goodsType: { attrId: null, valueId: '', options: [] },
@@ -176,7 +174,6 @@ function NewProduct() {
                     const findAttr = (keywords) => attrs.find(a => keywords.some(k => a.display_attribute_name.toLowerCase().includes(k.toLowerCase())));
                     const findVal = (list, keywords) => list ? list.find(v => keywords.some(k => v.display_value_name.toLowerCase().includes(k.toLowerCase()))) : null;
 
-                    // Helper to setup spec state
                     const setupSpec = (attrKey, keywordsAttr, keywordsVal) => {
                         const attr = findAttr(keywordsAttr);
                         if (attr) {
@@ -184,7 +181,7 @@ function NewProduct() {
                             const defaultVal = findVal(opts, keywordsVal);
                             newSpecs[attrKey] = {
                                 attrId: attr.attribute_id,
-                                valueId: defaultVal ? defaultVal.value_id : '', // defaults to detected or empty
+                                valueId: defaultVal ? defaultVal.value_id : '',
                                 options: opts
                             };
                         }
@@ -196,12 +193,11 @@ function NewProduct() {
                     setupSpec('feature', ['Feature', '特性'], ['Painted', '已上色']);
                     setupSpec('warranty', ['Warranty', '保固'], ['No', '無', 'NA']);
 
-                    // Character (Manual)
                     const charAttr = findAttr(['Character', '角色', '人物']);
                     if (charAttr) {
                         newSpecs.character = {
                             attrId: charAttr.attribute_id,
-                            valueId: '', // no default
+                            valueId: '',
                             options: charAttr.attribute_value_list || [],
                             text: '',
                             translated: ''
@@ -253,14 +249,12 @@ function NewProduct() {
             const result = await response.json()
             if (result.status === 'success') {
                 if (field === 'character') {
-                    // Try to auto-select if translated text matches an option
                     const translated = result.translation;
                     let matchId = '';
                     if (specs.character.options.length > 0) {
                         const match = specs.character.options.find(o => o.display_value_name === translated || o.original_value_name === translated);
                         if (match) matchId = match.value_id;
                     }
-
                     setSpecs(prev => ({
                         ...prev,
                         character: { ...prev.character, text: translated, translated: translated, valueId: matchId }
@@ -446,21 +440,13 @@ function NewProduct() {
     const popularBrands = ['BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'];
     const filteredBrandOptions = brandOptions.filter(o => o.display_value_name.toLowerCase().includes(brandFilter.toLowerCase()));
 
-    // Spec Select Component Helper
     const SpecSelect = ({ label, specKey, specData }) => (
         <div className="form-group">
             <label className="form-label">{label}</label>
             {specData.attrId ? (
-                <select
-                    className="form-input form-select"
-                    value={specData.valueId}
-                    onChange={(e) => handleSpecChange(specKey, e.target.value)}
-                    style={{ background: specData.valueId ? '#e6fffa' : '#fff' }}
-                >
+                <select className="form-input form-select" value={specData.valueId} onChange={(e) => handleSpecChange(specKey, e.target.value)} style={{ background: specData.valueId ? '#e6fffa' : '#fff' }}>
                     <option value="">-- Select or Not Found --</option>
-                    {specData.options.map(opt => (
-                        <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>
-                    ))}
+                    {specData.options.map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>)}
                 </select>
             ) : (
                 <input type="text" className="form-input" value="(Attribute Not Found)" readOnly disabled style={{ background: '#eee' }} />
@@ -470,6 +456,34 @@ function NewProduct() {
 
     return (
         <div className="page-container animate-fade-in">
+
+            {/* OVERLAY for Debugging Attributes */}
+            {debugAttributes && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '350px',
+                    background: 'white',
+                    borderBottom: '5px solid red',
+                    zIndex: 99999,
+                    overflow: 'auto',
+                    padding: '20px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                }}>
+                    <h3>⚠️ 属性ID抽出モード</h3>
+                    <p>自動取得するコードを書くために、以下のJSONデータをすべてコピーして、チャットに貼り付けてください。</p>
+                    <textarea
+                        style={{ width: '100%', height: '250px', fontSize: '10px', fontFamily: 'monospace' }}
+                        value={JSON.stringify(debugAttributes, null, 2)}
+                        readOnly
+                    />
+                    <button onClick={() => setDebugAttributes(null)} style={{ position: 'absolute', top: 10, right: 10, padding: '10px' }}>閉じる</button>
+                </div>
+            )}
+
+
             <header className="page-header">
                 <div>
                     <h1 className="page-title">新規出品</h1>
@@ -488,17 +502,7 @@ function NewProduct() {
                         <div className="card">
                             <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
 
-                            {debugAttributes && (
-                                <details style={{ marginBottom: '20px', background: '#f5f5f5', padding: '10px', borderRadius: '4px' }}>
-                                    <summary style={{ cursor: 'pointer', fontSize: '0.9em', fontWeight: 'bold' }}>🔧 属性デバッグ情報</summary>
-                                    <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '0.8em', marginTop: '10px' }}>
-                                        <pre>{JSON.stringify(debugAttributes, null, 2)}</pre>
-                                    </div>
-                                    <div style={{ marginTop: '10px', fontSize: '0.9em' }}>
-                                        <strong>Specs:</strong> Material={specs.material.valueId}, Type={specs.goodsType.valueId}
-                                    </div>
-                                </details>
-                            )}
+                            {/* Original Debug Area Hidden due to Overlay */}
 
                             <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--color-border)' }}>
                                 <label style={{ fontSize: '0.85em', fontWeight: 600, marginBottom: '8px', display: 'block', color: 'var(--color-text-secondary)' }}>
@@ -596,7 +600,7 @@ function NewProduct() {
 
                     {/* FULL WIDTH SPECIFICATIONS */}
                     <div className="card" style={{ marginTop: '20px', border: '1px solid #d0d0d0', background: '#fafafa' }}>
-                        <h3 className="card-title">📋 Specifications (Select required values)</h3>
+                        <h3 className="card-title">📋 Specifications</h3>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                             <SpecSelect label="Material (PVC)" specKey="material" specData={specs.material} />
                             <SpecSelect label="Goods Type (Figure)" specKey="goodsType" specData={specs.goodsType} />
@@ -613,18 +617,10 @@ function NewProduct() {
                                     </div>
                                     {specs.character.text && <div style={{ color: 'green', fontSize: '0.9em' }}>Translated: {specs.character.text}</div>}
 
-                                    {/* Character Select Fallback */}
                                     {specs.character.attrId && (
-                                        <select
-                                            className="form-input form-select"
-                                            value={specs.character.valueId}
-                                            onChange={(e) => handleSpecChange('character', e.target.value)}
-                                            style={{ background: specs.character.valueId ? '#e6fffa' : '#fff' }}
-                                        >
+                                        <select className="form-input form-select" value={specs.character.valueId} onChange={(e) => handleSpecChange('character', e.target.value)} style={{ background: specs.character.valueId ? '#e6fffa' : '#fff' }}>
                                             <option value="">(Select from list if matched)</option>
-                                            {specs.character.options.map(opt => (
-                                                <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>
-                                            ))}
+                                            {specs.character.options.map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>)}
                                         </select>
                                     )}
                                 </div>
