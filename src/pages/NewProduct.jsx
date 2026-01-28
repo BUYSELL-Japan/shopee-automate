@@ -23,8 +23,14 @@ function NewProduct() {
         price: '', // 販売価格 (TWD)
         costPrice: '', // 原価 (JPY)
         stock: '',
-        category: '101385', // デフォルト
-        brandId: '', // ブランドID (選択式)
+        category: '101385', // デフォルト: Action Figure
+        brandId: '1146303', // デフォルト: BANPRESTO (ID: 1146303)
+        adultId: '', // 成人向け属性の値ID
+
+        // 手動オーバーライド用
+        manualAttrId: '101044',
+        manualAttrValueId: '',
+
         sku: '',
         weight: '0.5',
         images: []
@@ -41,9 +47,14 @@ function NewProduct() {
     // Adult属性 (内部処理用)
     const [adultAttributeId, setAdultAttributeId] = useState(null)
     const [adultNoValueId, setAdultNoValueId] = useState(null)
+    // デバッグ表示用
+    const [adultOptions, setAdultOptions] = useState([])
 
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
     const [brandFilter, setBrandFilter] = useState('')
+
+    // デバッグ用
+    const [debugAttributes, setDebugAttributes] = useState(null)
 
     // その他UI
     const [isLoadingCategories, setIsLoadingCategories] = useState(false)
@@ -135,17 +146,22 @@ function NewProduct() {
         if (!formData.category || !accessToken || !shopId) return;
 
         setIsLoadingBrands(true)
-        setBrandOptions([])
+        // 既存の状態をリセット
+        // setBrandOptions([]) // ← BANPRESTOなどを残すため完全クリアしない手もあるが、API取得結果で上書きする方針
         setBrandAttributeId(null)
-        setFormData(prev => ({ ...prev, brandId: '' }))
+        // setFormData(prev => ({ ...prev, brandId: '' })) // ← デフォルト値を残すためリセットしない
         setBrandFilter('')
         setAdultAttributeId(null)
         setAdultNoValueId(null)
+        setAdultOptions([])
+        setDebugAttributes(null)
 
         getAttributes(accessToken, shopId, parseInt(formData.category))
             .then(result => {
+                console.log("Feature: getAttributes result", result);
                 if (result.response && result.response.attribute_list) {
                     const attrs = result.response.attribute_list;
+                    setDebugAttributes(attrs);
 
                     // Brand
                     const brandAttr = attrs.find(a =>
@@ -153,25 +169,47 @@ function NewProduct() {
                     );
                     if (brandAttr) {
                         setBrandAttributeId(brandAttr.attribute_id);
+                        let opts = [];
                         if (brandAttr.attribute_value_list) {
-                            setBrandOptions(brandAttr.attribute_value_list);
+                            opts = brandAttr.attribute_value_list;
+                        }
+
+                        // BANPRESTO (1146303) がリストにない場合、手動で追加して選択できるようにする
+                        if (!opts.find(o => o.value_id === 1146303)) {
+                            // 先頭に追加
+                            opts.unshift({
+                                value_id: 1146303,
+                                display_value_name: 'BANPRESTO (Recommended)'
+                            });
+                        }
+                        setBrandOptions(opts);
+
+                        // もしブランドが空ならデフォルト設定
+                        if (!formData.brandId) {
+                            setFormData(prev => ({ ...prev, brandId: '1146303' }));
                         }
                     }
 
-                    // Adult (101044) - 自動検出のみに使用
+                    // Adult (101044)
                     const adultAttr = attrs.find(a =>
                         a.attribute_id === 101044 || /Adult|成人/i.test(a.display_attribute_name)
                     );
                     if (adultAttr) {
                         setAdultAttributeId(adultAttr.attribute_id);
                         if (adultAttr.attribute_value_list) {
+                            setAdultOptions(adultAttr.attribute_value_list); // デバッグ用
+
                             // "No/否" を自動特定
                             const noVal = adultAttr.attribute_value_list.find(v => /No|否|いいえ/i.test(v.display_value_name));
                             if (noVal) {
                                 setAdultNoValueId(noVal.value_id);
                                 console.log(`✅ Auto-detected Adult=No ID: ${noVal.value_id}`);
+                            } else {
+                                console.warn("⚠️ 'No' option not found for Adult attribute");
                             }
                         }
+                    } else {
+                        console.warn("⚠️ Adult attribute not found");
                     }
                 }
             })
@@ -320,8 +358,19 @@ function NewProduct() {
         }
 
         if (!formData.brandId) {
-            alert('ブランドを選択するか、IDを手入力してください')
+            alert('ブランドを選択してください')
             return
+        }
+
+        // Adult属性チェック
+        // 自動取得できていない場合はエラーにする
+        // (ただし手動オーバーライドがある場合は許可)
+        const effectiveAdultValueId = adultNoValueId || formData.manualAttrValueId;
+        const effectiveAdultAttrId = adultAttributeId || (formData.manualAttrId ? parseInt(formData.manualAttrId) : 101044);
+
+        if (parseInt(formData.category) === 101385 && !effectiveAdultValueId) {
+            alert(`エラー: 必須属性 'Adult products' (101044) の値が取得できていません。\n\n考えられる原因:\n1. APIロード待ち (数秒待って再試行してください)\n2. デバッグ情報の 'Adult Values' が空\n\n対処: デバッグ情報を開き、正しい Value ID を '手動入力: Value ID' に入力してください。`);
+            return; // ブロックする
         }
 
         const validImages = formData.images.filter(img => img.status === 'done' && img.id)
@@ -344,13 +393,12 @@ function NewProduct() {
             const finalPrice = parseFloat(formData.price)
 
             // 属性リスト構築
-            // Adult属性 (101044) を自動挿入
             const attributes = []
 
-            if (adultAttributeId && adultNoValueId) {
+            if (effectiveAdultAttrId && effectiveAdultValueId) {
                 attributes.push({
-                    attribute_id: adultAttributeId,
-                    attribute_value_list: [{ value_id: parseInt(adultNoValueId) }]
+                    attribute_id: effectiveAdultAttrId,
+                    attribute_value_list: [{ value_id: parseInt(effectiveAdultValueId) }]
                 });
             }
 
@@ -363,10 +411,10 @@ function NewProduct() {
                 const matchOption = brandOptions.find(o => o.value_id === brandIdNum);
                 if (matchOption) {
                     brandName = matchOption.display_value_name;
+                } else if (brandIdNum === 1146303) {
+                    brandName = "BANPRESTO";
                 } else {
-                    if (brandIdNum === 1146303) brandName = "BANPRESTO";
-                    else if (brandIdNum === 0) brandName = "No Brand";
-                    else brandName = "General";
+                    brandName = "General";
                 }
 
                 brandPayload = {
@@ -410,7 +458,7 @@ function NewProduct() {
         }
     }
 
-    // 主要ブランド
+    // 主要ブランド (クイック選択用)
     const popularBrands = [
         'BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'
     ];
@@ -438,6 +486,20 @@ function NewProduct() {
                     <div className="grid-2">
                         <div className="card">
                             <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
+
+                            {/* デバッグ情報表示エリア */}
+                            {debugAttributes && (
+                                <details style={{ marginBottom: '20px', background: '#f5f5f5', padding: '10px', borderRadius: '4px' }}>
+                                    <summary style={{ cursor: 'pointer', fontSize: '0.9em', fontWeight: 'bold' }}>🔧 属性デバッグ情報 (クリック)</summary>
+                                    <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '0.8em', marginTop: '10px' }}>
+                                        <pre>{JSON.stringify(debugAttributes, null, 2)}</pre>
+                                    </div>
+                                    <div style={{ marginTop: '10px', fontSize: '0.9em' }}>
+                                        <strong>Adult Values Found:</strong> {adultOptions.length > 0 ? 'YES' : 'NO'} <br />
+                                        {adultOptions.map(o => <span key={o.value_id}> {o.display_value_name} (ID: {o.value_id}) </span>)}
+                                    </div>
+                                </details>
+                            )}
 
                             {/* 既存商品からコピー */}
                             <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--color-border)' }}>
@@ -494,82 +556,111 @@ function NewProduct() {
                                     ブランド (Brand) *
                                 </label>
                                 <div style={{ background: 'var(--color-bg-secondary)', padding: '12px', borderRadius: '8px' }}>
-                                    {brandOptions.length > 0 ? (
-                                        <>
-                                            <div style={{ marginBottom: '8px' }}>
-                                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                                    {popularBrands.map(brandName => {
-                                                        let match = brandOptions.find(o => o.display_value_name.toLowerCase() === brandName.toLowerCase())
-                                                        if (!match) match = brandOptions.find(o => o.display_value_name.toLowerCase().includes(brandName.toLowerCase()))
-                                                        if (match) {
-                                                            return (
-                                                                <button
-                                                                    key={match.value_id}
-                                                                    type="button"
-                                                                    className={`btn btn-sm ${formData.brandId == match.value_id ? 'btn-primary' : 'btn-secondary'}`}
-                                                                    onClick={() => setFormData(prev => ({ ...prev, brandId: match.value_id.toString() }))}
-                                                                    style={{ fontSize: '11px', padding: '2px 8px', height: 'auto', borderRadius: '12px' }}
-                                                                >
-                                                                    {match.display_value_name}
-                                                                </button>
-                                                            )
-                                                        }
-                                                        return null
-                                                    })}
-                                                </div>
+                                    {/* クイック選択 */}
+                                    {brandOptions.length > 0 && (
+                                        <div style={{ marginBottom: '8px' }}>
+                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                {popularBrands.map(brandName => {
+                                                    let match = brandOptions.find(o => o.display_value_name.toLowerCase() === brandName.toLowerCase())
+                                                    if (!match) match = brandOptions.find(o => o.display_value_name.toLowerCase().includes(brandName.toLowerCase()))
+                                                    if (match) {
+                                                        return (
+                                                            <button
+                                                                key={match.value_id}
+                                                                type="button"
+                                                                className={`btn btn-sm ${formData.brandId == match.value_id ? 'btn-primary' : 'btn-secondary'}`}
+                                                                onClick={() => setFormData(prev => ({ ...prev, brandId: match.value_id.toString() }))}
+                                                                style={{ fontSize: '11px', padding: '2px 8px', height: 'auto', borderRadius: '12px' }}
+                                                            >
+                                                                {match.display_value_name}
+                                                            </button>
+                                                        )
+                                                    }
+                                                    return null
+                                                })}
                                             </div>
+                                        </div>
+                                    )}
 
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                <input
-                                                    type="text"
-                                                    className="form-input"
-                                                    placeholder="ブランド名を検索..."
-                                                    value={brandFilter}
-                                                    onChange={(e) => setBrandFilter(e.target.value)}
-                                                />
-                                                <select
-                                                    className="form-input form-select"
-                                                    value={formData.brandId}
-                                                    onChange={handleChange}
-                                                    name="brandId"
-                                                    size={5}
-                                                    style={{ height: 'auto' }}
-                                                >
-                                                    <option value="">-- 一覧から選択 --</option>
-                                                    {filteredBrandOptions.slice(0, 100).map(opt => (
-                                                        <option key={opt.value_id} value={opt.value_id}>
-                                                            {opt.display_value_name}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                                                    <span style={{ fontSize: '0.9em' }}>または ID直接入力:</span>
-                                                    <input
-                                                        type="text"
-                                                        className="form-input"
-                                                        style={{ width: '120px' }}
-                                                        placeholder="例: 1146303"
-                                                        value={formData.brandId}
-                                                        onChange={handleChange}
-                                                        name="brandId"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
                                             <input
                                                 type="text"
                                                 className="form-input"
-                                                placeholder="ブランドID入力 (例: 1146303)"
+                                                placeholder="ブランド名を検索..."
+                                                value={brandFilter}
+                                                onChange={(e) => setBrandFilter(e.target.value)}
+                                                style={{ flex: 1 }}
+                                            />
+                                        </div>
+                                        <select
+                                            className="form-input form-select"
+                                            value={formData.brandId}
+                                            onChange={handleChange}
+                                            name="brandId"
+                                            size={5}
+                                            style={{ height: 'auto' }}
+                                        >
+                                            <option value="">-- 一覧から選択 --</option>
+                                            {filteredBrandOptions.length > 0 ? (
+                                                filteredBrandOptions.slice(0, 100).map(opt => (
+                                                    <option key={opt.value_id} value={opt.value_id}>
+                                                        {opt.display_value_name}
+                                                    </option>
+                                                ))
+                                            ) : (
+                                                // リストがない場合でも強制的にBANPRESTOを表示
+                                                <option value="1146303">BANPRESTO (Recommended)</option>
+                                            )}
+                                        </select>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                                            <span style={{ fontSize: '0.9em' }}>または ID直接入力:</span>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                style={{ width: '120px' }}
+                                                placeholder="例: 1146303"
                                                 value={formData.brandId}
                                                 onChange={handleChange}
                                                 name="brandId"
                                             />
                                         </div>
-                                    )}
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* 成人向け属性 (Adult) - 手動オーバーライドUI (自動取得失敗時用) */}
+                            {(!adultNoValueId && !isLoadingBrands) && (
+                                <div className="form-group" style={{ background: '#fff0f0', padding: '10px', borderRadius: '8px', border: '1px solid #ffcccb' }}>
+                                    <label className="form-label" style={{ color: '#d32f2f', fontSize: '0.9em' }}>
+                                        ⚠️ 'Adult' 属性の値が自動取得できていません
+                                    </label>
+                                    <p style={{ fontSize: '0.8em', marginBottom: '8px' }}>デバッグ情報を確認し、Value IDを入力してください</p>
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                        <label style={{ fontSize: '0.8em' }}>Attr ID:</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            style={{ width: '80px' }}
+                                            value={formData.manualAttrId}
+                                            onChange={handleChange}
+                                            name="manualAttrId"
+                                            placeholder="101044"
+                                        />
+                                        <label style={{ fontSize: '0.8em' }}>Value ID:</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            style={{ width: '100px' }}
+                                            value={formData.manualAttrValueId}
+                                            onChange={handleChange}
+                                            name="manualAttrValueId"
+                                            placeholder="例: 12345"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
                         </div>
 
                         <div className="card">
