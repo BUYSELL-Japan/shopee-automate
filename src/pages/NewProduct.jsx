@@ -25,12 +25,6 @@ function NewProduct() {
         stock: '',
         category: '101385', // デフォルト: Action Figure
         brandId: '1146303', // デフォルト: BANPRESTO (ID: 1146303)
-        adultId: '', // 成人向け属性の値ID
-
-        // 手動オーバーライド用
-        manualAttrId: '101044',
-        manualAttrValueId: '',
-
         sku: '',
         weight: '0.5',
         images: []
@@ -40,15 +34,9 @@ function NewProduct() {
     const [categories, setCategories] = useState([])
     const [logistics, setLogistics] = useState([])
 
-    // ブランド・属性関連
+    // ブランド関連
     const [brandAttributeId, setBrandAttributeId] = useState(null)
     const [brandOptions, setBrandOptions] = useState([])
-
-    // Adult属性 (内部処理用)
-    const [adultAttributeId, setAdultAttributeId] = useState(null)
-    const [adultNoValueId, setAdultNoValueId] = useState(null)
-    // デバッグ表示用
-    const [adultOptions, setAdultOptions] = useState([])
 
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
     const [brandFilter, setBrandFilter] = useState('')
@@ -146,14 +134,8 @@ function NewProduct() {
         if (!formData.category || !accessToken || !shopId) return;
 
         setIsLoadingBrands(true)
-        // 既存の状態をリセット
-        // setBrandOptions([]) // ← BANPRESTOなどを残すため完全クリアしない手もあるが、API取得結果で上書きする方針
         setBrandAttributeId(null)
-        // setFormData(prev => ({ ...prev, brandId: '' })) // ← デフォルト値を残すためリセットしない
         setBrandFilter('')
-        setAdultAttributeId(null)
-        setAdultNoValueId(null)
-        setAdultOptions([])
         setDebugAttributes(null)
 
         getAttributes(accessToken, shopId, parseInt(formData.category))
@@ -176,7 +158,6 @@ function NewProduct() {
 
                         // BANPRESTO (1146303) がリストにない場合、手動で追加して選択できるようにする
                         if (!opts.find(o => o.value_id === 1146303)) {
-                            // 先頭に追加
                             opts.unshift({
                                 value_id: 1146303,
                                 display_value_name: 'BANPRESTO (Recommended)'
@@ -188,28 +169,6 @@ function NewProduct() {
                         if (!formData.brandId) {
                             setFormData(prev => ({ ...prev, brandId: '1146303' }));
                         }
-                    }
-
-                    // Adult (101044)
-                    const adultAttr = attrs.find(a =>
-                        a.attribute_id === 101044 || /Adult|成人/i.test(a.display_attribute_name)
-                    );
-                    if (adultAttr) {
-                        setAdultAttributeId(adultAttr.attribute_id);
-                        if (adultAttr.attribute_value_list) {
-                            setAdultOptions(adultAttr.attribute_value_list); // デバッグ用
-
-                            // "No/否" を自動特定
-                            const noVal = adultAttr.attribute_value_list.find(v => /No|否|いいえ/i.test(v.display_value_name));
-                            if (noVal) {
-                                setAdultNoValueId(noVal.value_id);
-                                console.log(`✅ Auto-detected Adult=No ID: ${noVal.value_id}`);
-                            } else {
-                                console.warn("⚠️ 'No' option not found for Adult attribute");
-                            }
-                        }
-                    } else {
-                        console.warn("⚠️ Adult attribute not found");
                     }
                 }
             })
@@ -362,17 +321,6 @@ function NewProduct() {
             return
         }
 
-        // Adult属性チェック
-        // 自動取得できていない場合はエラーにする
-        // (ただし手動オーバーライドがある場合は許可)
-        const effectiveAdultValueId = adultNoValueId || formData.manualAttrValueId;
-        const effectiveAdultAttrId = adultAttributeId || (formData.manualAttrId ? parseInt(formData.manualAttrId) : 101044);
-
-        if (parseInt(formData.category) === 101385 && !effectiveAdultValueId) {
-            alert(`エラー: 必須属性 'Adult products' (101044) の値が取得できていません。\n\n考えられる原因:\n1. APIロード待ち (数秒待って再試行してください)\n2. デバッグ情報の 'Adult Values' が空\n\n対処: デバッグ情報を開き、正しい Value ID を '手動入力: Value ID' に入力してください。`);
-            return; // ブロックする
-        }
-
         const validImages = formData.images.filter(img => img.status === 'done' && img.id)
         if (validImages.length === 0) {
             alert('画像を少なくとも1枚アップロードしてください')
@@ -395,12 +343,11 @@ function NewProduct() {
             // 属性リスト構築
             const attributes = []
 
-            if (effectiveAdultAttrId && effectiveAdultValueId) {
-                attributes.push({
-                    attribute_id: effectiveAdultAttrId,
-                    attribute_value_list: [{ value_id: parseInt(effectiveAdultValueId) }]
-                });
-            }
+            // Adult Attribute (101044) ハードコード (Value ID: 2000001)
+            attributes.push({
+                attribute_id: 101044,
+                attribute_value_list: [{ value_id: 2000001 }]
+            });
 
             // Brand
             let brandPayload = undefined;
@@ -458,7 +405,7 @@ function NewProduct() {
         }
     }
 
-    // 主要ブランド (クイック選択用)
+    // 主要ブランド
     const popularBrands = [
         'BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'
     ];
@@ -493,10 +440,6 @@ function NewProduct() {
                                     <summary style={{ cursor: 'pointer', fontSize: '0.9em', fontWeight: 'bold' }}>🔧 属性デバッグ情報 (クリック)</summary>
                                     <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '0.8em', marginTop: '10px' }}>
                                         <pre>{JSON.stringify(debugAttributes, null, 2)}</pre>
-                                    </div>
-                                    <div style={{ marginTop: '10px', fontSize: '0.9em' }}>
-                                        <strong>Adult Values Found:</strong> {adultOptions.length > 0 ? 'YES' : 'NO'} <br />
-                                        {adultOptions.map(o => <span key={o.value_id}> {o.display_value_name} (ID: {o.value_id}) </span>)}
                                     </div>
                                 </details>
                             )}
@@ -609,7 +552,6 @@ function NewProduct() {
                                                     </option>
                                                 ))
                                             ) : (
-                                                // リストがない場合でも強制的にBANPRESTOを表示
                                                 <option value="1146303">BANPRESTO (Recommended)</option>
                                             )}
                                         </select>
@@ -628,39 +570,6 @@ function NewProduct() {
                                     </div>
                                 </div>
                             </div>
-
-                            {/* 成人向け属性 (Adult) - 手動オーバーライドUI (自動取得失敗時用) */}
-                            {(!adultNoValueId && !isLoadingBrands) && (
-                                <div className="form-group" style={{ background: '#fff0f0', padding: '10px', borderRadius: '8px', border: '1px solid #ffcccb' }}>
-                                    <label className="form-label" style={{ color: '#d32f2f', fontSize: '0.9em' }}>
-                                        ⚠️ 'Adult' 属性の値が自動取得できていません
-                                    </label>
-                                    <p style={{ fontSize: '0.8em', marginBottom: '8px' }}>デバッグ情報を確認し、Value IDを入力してください</p>
-                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                        <label style={{ fontSize: '0.8em' }}>Attr ID:</label>
-                                        <input
-                                            type="text"
-                                            className="form-input"
-                                            style={{ width: '80px' }}
-                                            value={formData.manualAttrId}
-                                            onChange={handleChange}
-                                            name="manualAttrId"
-                                            placeholder="101044"
-                                        />
-                                        <label style={{ fontSize: '0.8em' }}>Value ID:</label>
-                                        <input
-                                            type="text"
-                                            className="form-input"
-                                            style={{ width: '100px' }}
-                                            value={formData.manualAttrValueId}
-                                            onChange={handleChange}
-                                            name="manualAttrValueId"
-                                            placeholder="例: 12345"
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
                         </div>
 
                         <div className="card">
