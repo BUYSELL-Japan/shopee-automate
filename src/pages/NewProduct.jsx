@@ -124,7 +124,12 @@ function NewProduct() {
             getLogistics(accessToken, shopId)
                 .then(result => {
                     if (result.response && result.response.logistics_channel_list) {
-                        setLogistics(result.response.logistics_channel_list)
+                        // ユーザー要望により「蝦皮海外 - 蝦皮店到店（海運）」を除外
+                        const filtered = result.response.logistics_channel_list.filter(l =>
+                            l.logistics_channel_name !== '蝦皮海外 - 蝦皮店到店（海運）' &&
+                            !l.logistics_channel_name.includes('海運')
+                        );
+                        setLogistics(filtered)
                     }
                 })
                 .catch(err => console.error('Logistics fetch error:', err))
