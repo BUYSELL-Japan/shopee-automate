@@ -34,9 +34,15 @@ function NewProduct() {
     const [categories, setCategories] = useState([])
     const [logistics, setLogistics] = useState([])
 
-    // ブランド関連
+    // ブランド・属性関連
     const [brandAttributeId, setBrandAttributeId] = useState(null)
     const [brandOptions, setBrandOptions] = useState([])
+
+    // Adult属性 (内部処理用)
+    const [adultAttributeId, setAdultAttributeId] = useState(null)
+    const [adultNoValueId, setAdultNoValueId] = useState(null)
+    // デバッグ表示用
+    const [adultOptions, setAdultOptions] = useState([])
 
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
     const [brandFilter, setBrandFilter] = useState('')
@@ -136,6 +142,9 @@ function NewProduct() {
         setIsLoadingBrands(true)
         setBrandAttributeId(null)
         setBrandFilter('')
+        setAdultAttributeId(null)
+        setAdultNoValueId(null)
+        setAdultOptions([])
         setDebugAttributes(null)
 
         getAttributes(accessToken, shopId, parseInt(formData.category))
@@ -158,6 +167,7 @@ function NewProduct() {
 
                         // BANPRESTO (1146303) がリストにない場合、手動で追加して選択できるようにする
                         if (!opts.find(o => o.value_id === 1146303)) {
+                            // 先頭に追加
                             opts.unshift({
                                 value_id: 1146303,
                                 display_value_name: 'BANPRESTO (Recommended)'
@@ -169,6 +179,34 @@ function NewProduct() {
                         if (!formData.brandId) {
                             setFormData(prev => ({ ...prev, brandId: '1146303' }));
                         }
+                    }
+
+                    // Adult (101044)
+                    const adultAttr = attrs.find(a =>
+                        a.attribute_id === 101044 || /Adult|成人/i.test(a.display_attribute_name)
+                    );
+                    if (adultAttr) {
+                        setAdultAttributeId(adultAttr.attribute_id);
+                        if (adultAttr.attribute_value_list) {
+                            setAdultOptions(adultAttr.attribute_value_list); // デバッグ用
+
+                            // "No/否" を自動特定
+                            const noVal = adultAttr.attribute_value_list.find(v => /No|否|いいえ/i.test(v.display_value_name));
+                            if (noVal) {
+                                setAdultNoValueId(noVal.value_id);
+                                console.log(`✅ Auto-detected Adult=No ID from API: ${noVal.value_id}`);
+                            } else {
+                                console.warn("⚠️ 'No' option not found for Adult attribute via regex.");
+                                // フォールバック: 2000001 (多くのカテゴリで共通のNo) を探してみる
+                                const fallbackVal = adultAttr.attribute_value_list.find(v => v.value_id === 2000001);
+                                if (fallbackVal) {
+                                    setAdultNoValueId(fallbackVal.value_id);
+                                    console.log(`✅ Auto-detected Adult=No ID (Fallback 2000001): ${fallbackVal.value_id}`);
+                                }
+                            }
+                        }
+                    } else {
+                        console.warn("⚠️ Adult attribute not found");
                     }
                 }
             })
@@ -321,6 +359,12 @@ function NewProduct() {
             return
         }
 
+        // Adult属性チェック
+        if (parseInt(formData.category) === 101385 && !adultNoValueId) {
+            alert(`エラー: 必須属性 'Adult products' (101044) の値がAPIから取得できていません。\nAPIレスポンスのロードを待つか、デバッグ情報を確認してください。\n(まだロード中の可能性があります)`);
+            return;
+        }
+
         const validImages = formData.images.filter(img => img.status === 'done' && img.id)
         if (validImages.length === 0) {
             alert('画像を少なくとも1枚アップロードしてください')
@@ -343,11 +387,12 @@ function NewProduct() {
             // 属性リスト構築
             const attributes = []
 
-            // Adult Attribute (101044) ハードコード (Value ID: 2000001)
-            attributes.push({
-                attribute_id: 101044,
-                attribute_value_list: [{ value_id: 2000001 }]
-            });
+            if (adultAttributeId && adultNoValueId) {
+                attributes.push({
+                    attribute_id: adultAttributeId,
+                    attribute_value_list: [{ value_id: parseInt(adultNoValueId) }]
+                });
+            }
 
             // Brand
             let brandPayload = undefined;
@@ -440,6 +485,12 @@ function NewProduct() {
                                     <summary style={{ cursor: 'pointer', fontSize: '0.9em', fontWeight: 'bold' }}>🔧 属性デバッグ情報 (クリック)</summary>
                                     <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '0.8em', marginTop: '10px' }}>
                                         <pre>{JSON.stringify(debugAttributes, null, 2)}</pre>
+                                    </div>
+                                    <div style={{ marginTop: '10px', fontSize: '0.9em' }}>
+                                        <strong>Adult Values Found:</strong> {adultOptions.length > 0 ? 'YES' : 'NO'} <br />
+                                        {adultOptions.map(o => <span key={o.value_id}> {o.display_value_name} (ID: {o.value_id}) </span>)}
+                                        <br />
+                                        <strong>Auto-Selected ID for Submit:</strong> {adultNoValueId || 'NONE'}
                                     </div>
                                 </details>
                             )}
