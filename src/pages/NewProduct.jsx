@@ -29,6 +29,27 @@ const DEFAULT_FOOTER_TEXT = `官方授權正品
 
 由於是從日本跨境運送，到貨時程約需 7-14 個工作天，謝謝您的耐心等候！`
 
+// SpecSelect helper component
+function SpecSelect({ label, specKey, specData, onChange }) {
+    if (!specData || !specData.attrId) return null;
+    return (
+        <div className="form-group">
+            <label className="form-label">{label}</label>
+            <select
+                className="form-input form-select"
+                value={specData.valueId || ''}
+                onChange={(e) => onChange ? onChange(specKey, e.target.value) : null}
+                style={{ background: specData.valueId ? '#e6fffa' : '#fff' }}
+            >
+                <option value="">-- 選択 --</option>
+                {specData.options && specData.options.map(opt => (
+                    <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>
+                ))}
+            </select>
+        </div>
+    );
+}
+
 function NewProduct() {
     const navigate = useNavigate()
     const { accessToken, shopId, isConnected } = useShopeeAuth()
@@ -576,11 +597,11 @@ function NewProduct() {
                         <div className="card" style={{ marginTop: '20px', border: '1px solid #d0d0d0', background: '#fafafa' }}>
                             <h3 className="card-title">📋 Specifications</h3>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                                <SpecSelect label="Material (PVC)" specKey="material" specData={specs.material} />
-                                <SpecSelect label="Goods Type (Figure)" specKey="goodsType" specData={specs.goodsType} />
-                                <SpecSelect label="Style (Anime)" specKey="style" specData={specs.style} />
-                                <SpecSelect label="Feature (Painted)" specKey="feature" specData={specs.feature} />
-                                <SpecSelect label="Warranty (NA)" specKey="warranty" specData={specs.warranty} />
+                                <SpecSelect label="Material (PVC)" specKey="material" specData={specs.material} onChange={handleSpecChange} />
+                                <SpecSelect label="Goods Type (Figure)" specKey="goodsType" specData={specs.goodsType} onChange={handleSpecChange} />
+                                <SpecSelect label="Style (Anime)" specKey="style" specData={specs.style} onChange={handleSpecChange} />
+                                <SpecSelect label="Feature (Painted)" specKey="feature" specData={specs.feature} onChange={handleSpecChange} />
+                                <SpecSelect label="Warranty (NA)" specKey="warranty" specData={specs.warranty} onChange={handleSpecChange} />
 
                                 <div className="form-group">
                                     <label className="form-label">Character (Manual or Select)</label>
