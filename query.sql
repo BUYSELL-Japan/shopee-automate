@@ -1,0 +1,1 @@
+SELECT * FROM tokens LIMIT 1;

@@ -439,234 +439,184 @@ function NewProduct() {
         }
     }
 
-    const popularBrands = ['BANPRESTO', 'SEGA', 'Bandai Spirits', 'Taito', 'Furyu', 'Good Smile Company', 'Kotobukiya', 'MegaHouse'];
+    // Popular brands with confirmed Shopee Brand IDs
+    const BRAND_MAP = {
+        'BANPRESTO': 1146303,
+        'Good Smile Company': 1146546,
+        'TAITO': 1802638,
+        'Furyu': 1801231,
+        'Kotobukiya': 1146669,
+        'MegaHouse': 1801884,
+        'BANDAI': 4605655,
+        'Bandai Namco': 2559617
+    };
+    const popularBrands = Object.keys(BRAND_MAP);
     const filteredBrandOptions = brandOptions.filter(o => o.display_value_name.toLowerCase().includes(brandFilter.toLowerCase()));
 
-    // --- MANUAL DEBUG FUNCTION ---
-    const handleManualDebug = async () => {
-        if (!accessToken || !shopId) {
-            alert("API接続情報がありません。設定を確認してください。");
-            return;
-        }
-        try {
-            // Force fetch category 101385
-            const res = await getAttributes(accessToken, shopId, 101385);
-            console.log("Manual Debug Res:", res);
-            const data = res.response && res.response.attribute_list ? res.response.attribute_list : res;
-            setDebugAttributes(data);
-            // Also alert success
-            alert("データ取得しました。画面上の赤いウィンドウからコピーしてください。");
-        } catch (e) {
-            alert("データ取得エラー: " + e.message);
-        }
-    };
+    {/* MANUAL DEBUG OVERLAY REMOVED */ }
 
-    const SpecSelect = ({ label, specKey, specData }) => (
-        <div className="form-group">
-            <label className="form-label">{label}</label>
-            {specData.attrId ? (
-                <select className="form-input form-select" value={specData.valueId} onChange={(e) => handleSpecChange(specKey, e.target.value)} style={{ background: specData.valueId ? '#e6fffa' : '#fff' }}>
-                    <option value="">-- Select or Not Found --</option>
-                    {specData.options.map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>)}
-                </select>
-            ) : (
-                <input type="text" className="form-input" value="(Attribute Not Found)" readOnly disabled style={{ background: '#eee' }} />
-            )}
+    <header className="page-header">
+        <div>
+            <h1 className="page-title">新規出品</h1>
+            <p className="page-subtitle">Shopeeに新しい商品を出品します</p>
         </div>
-    );
+    </header>
 
-    return (
-        <div className="page-container animate-fade-in">
+    {
+        !isConnected ? (
+            <div className="card">
+                <p>APIに接続されていません。設定ページで接続してください。</p>
+            </div>
+        ) : (
+            <form onSubmit={handleSubmit}>
+                <div className="grid-2">
+                    {/* LEFT COLUMN */}
+                    <div className="card">
+                        <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
 
-            {/* MANUAL DEBUG OVERLAY */}
-            {debugAttributes && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-                    background: 'rgba(0,0,0,0.8)', zIndex: 99999, padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center'
-                }}>
-                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', width: '90%', height: '80%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                        <h3>⚠️ 属性ID抽出データ</h3>
-                        <p>以下のデータをすべて選択してコピーし、チャットに貼り付けてください。</p>
-                        <textarea
-                            style={{ flex: 1, fontSize: '11px', fontFamily: 'monospace', marginBottom: '10px' }}
-                            value={JSON.stringify(debugAttributes, null, 2)}
-                            readOnly
-                        />
-                        <button onClick={() => setDebugAttributes(null)} className="btn btn-primary" style={{ alignSelf: 'flex-end' }}>閉じる</button>
-                    </div>
-                </div>
-            )}
-
-            <header className="page-header">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                        <h1 className="page-title">新規出品</h1>
-                        <p className="page-subtitle">Shopeeに新しい商品を出品します</p>
-                    </div>
-                    {/* MANUAL DEBUG BUTTON */}
-                    <div>
-                        <button type="button" onClick={handleManualDebug} style={{
-                            background: '#d32f2f', color: 'white', padding: '10px 20px',
-                            fontWeight: 'bold', border: 'none', borderRadius: '4px', cursor: 'pointer',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                        }}>
-                            🛠 属性データ取得 (Click Here)
-                        </button>
-                    </div>
-                </div>
-            </header>
-
-            {!isConnected ? (
-                <div className="card">
-                    <p>APIに接続されていません。設定ページで接続してください。</p>
-                </div>
-            ) : (
-                <form onSubmit={handleSubmit}>
-                    <div className="grid-2">
-                        {/* LEFT COLUMN */}
-                        <div className="card">
-                            <h3 className="card-title" style={{ marginBottom: 'var(--spacing-lg)' }}>基本情報</h3>
-
-                            <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--color-border)' }}>
-                                <label style={{ fontSize: '0.85em', fontWeight: 600, marginBottom: '8px', display: 'block', color: 'var(--color-text-secondary)' }}>
-                                    🔧 既存商品からコピー
-                                </label>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <input type="text" className="form-input" style={{ height: '36px', fontSize: '13px' }} placeholder="Item ID" value={sourceItemId} onChange={(e) => setSourceItemId(e.target.value)} />
-                                    <button type="button" className="btn btn-secondary" style={{ height: '36px', padding: '0 16px', fontSize: '13px', whiteSpace: 'nowrap' }} onClick={handleFetchSourceItem} disabled={isFetchingSource}>
-                                        {isFetchingSource ? '取得中...' : 'カテゴリ取得'}
-                                    </button>
-                                </div>
+                        <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--color-border)' }}>
+                            <label style={{ fontSize: '0.85em', fontWeight: 600, marginBottom: '8px', display: 'block', color: 'var(--color-text-secondary)' }}>
+                                🔧 既存商品からコピー
+                            </label>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <input type="text" className="form-input" style={{ height: '36px', fontSize: '13px' }} placeholder="Item ID" value={sourceItemId} onChange={(e) => setSourceItemId(e.target.value)} />
+                                <button type="button" className="btn btn-secondary" style={{ height: '36px', padding: '0 16px', fontSize: '13px', whiteSpace: 'nowrap' }} onClick={handleFetchSourceItem} disabled={isFetchingSource}>
+                                    {isFetchingSource ? '取得中...' : 'カテゴリ取得'}
+                                </button>
                             </div>
+                        </div>
 
-                            <div className="form-group">
-                                <label className="form-label">商品名 *</label>
-                                <input type="text" name="name" className="form-input" placeholder="日本語で入力してAI翻訳" value={formData.name} onChange={handleChange} required />
-                                <div style={{ marginTop: '4px', textAlign: 'right' }}>
-                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('name')} disabled={translating.name || !formData.name}>✨ AI翻訳</button>
-                                </div>
+                        <div className="form-group">
+                            <label className="form-label">商品名 *</label>
+                            <input type="text" name="name" className="form-input" placeholder="日本語で入力してAI翻訳" value={formData.name} onChange={handleChange} required />
+                            <div style={{ marginTop: '4px', textAlign: 'right' }}>
+                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('name')} disabled={translating.name || !formData.name}>✨ AI翻訳</button>
                             </div>
+                        </div>
 
-                            <div className="form-group">
-                                <label className="form-label">商品説明</label>
-                                <textarea name="description" className="form-input form-textarea" placeholder="日本語で入力..." value={formData.description} onChange={handleChange} />
-                                <div style={{ marginTop: '4px', textAlign: 'right' }}>
-                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('description')} disabled={translating.description || !formData.description}>✨ AI翻訳</button>
-                                </div>
+                        <div className="form-group">
+                            <label className="form-label">商品説明</label>
+                            <textarea name="description" className="form-input form-textarea" placeholder="日本語で入力..." value={formData.description} onChange={handleChange} />
+                            <div style={{ marginTop: '4px', textAlign: 'right' }}>
+                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleTranslate('description')} disabled={translating.description || !formData.description}>✨ AI翻訳</button>
                             </div>
+                        </div>
 
-                            <div className="form-group">
-                                <label className="form-label">共通フッター (自動挿入)</label>
-                                <textarea name="descriptionFooter" className="form-input form-textarea" style={{ height: '150px', background: '#f9f9f9', fontSize: '0.9em' }} value={formData.descriptionFooter} onChange={handleChange} />
-                            </div>
+                        <div className="form-group">
+                            <label className="form-label">共通フッター (自動挿入)</label>
+                            <textarea name="descriptionFooter" className="form-input form-textarea" style={{ height: '150px', background: '#f9f9f9', fontSize: '0.9em' }} value={formData.descriptionFooter} onChange={handleChange} />
+                        </div>
 
-                            <div className="form-group">
-                                <label className="form-label">
-                                    カテゴリ * {detectedCategory && <span style={{ fontSize: '0.8em', color: 'var(--color-success)', marginLeft: '8px' }}>{detectedCategory.name}</span>}
-                                </label>
-                                <select name="category" className="form-input form-select" value={formData.category} onChange={handleChange} required disabled={isLoadingCategories}>
-                                    <option value="">{isLoadingCategories ? '読み込み中...' : 'カテゴリを選択'}</option>
-                                    {categories.map((cat) => (
-                                        <option key={cat.category_id} value={cat.category_id}>
-                                            {cat.category_id === 101385 ? '◎ ' : /Figure|Toy|Hobby/i.test(cat.display_category_name) ? '★ ' : ''}
-                                            {cat.display_category_name}
-                                        </option>
-                                    ))}
+                        <div className="form-group">
+                            <label className="form-label">
+                                カテゴリ * {detectedCategory && <span style={{ fontSize: '0.8em', color: 'var(--color-success)', marginLeft: '8px' }}>{detectedCategory.name}</span>}
+                            </label>
+                            <select name="category" className="form-input form-select" value={formData.category} onChange={handleChange} required disabled={isLoadingCategories}>
+                                <option value="">{isLoadingCategories ? '読み込み中...' : 'カテゴリを選択'}</option>
+                                {categories.map((cat) => (
+                                    <option key={cat.category_id} value={cat.category_id}>
+                                        {cat.category_id === 101385 ? '◎ ' : /Figure|Toy|Hobby/i.test(cat.display_category_name) ? '★ ' : ''}
+                                        {cat.display_category_name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">品牌 (Brand) *</label>
+                            <div style={{ background: 'var(--color-bg-secondary)', padding: '12px', borderRadius: '8px' }}>
+                                {brandOptions.length > 0 && (
+                                    <div style={{ marginBottom: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                        {popularBrands.map(brandName => {
+                                            // Use confirmed BRAND_MAP first, fallback to API list
+                                            const confirmedId = BRAND_MAP[brandName];
+                                            let match = confirmedId ? { value_id: confirmedId, display_value_name: brandName } : brandOptions.find(o => o.display_value_name.toLowerCase().includes(brandName.toLowerCase()));
+                                            if (match) return <button key={match.value_id} type="button" className={`btn btn-sm ${formData.brandId == match.value_id ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFormData(prev => ({ ...prev, brandId: match.value_id.toString() }))} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '12px' }}>{match.display_value_name}</button>;
+                                            return null;
+                                        })}
+                                    </div>
+                                )}
+                                <select className="form-input form-select" value={formData.brandId} onChange={handleChange} name="brandId">
+                                    <option value="">-- 一覧から選択 --</option>
+                                    {filteredBrandOptions.length > 0 ? filteredBrandOptions.slice(0, 100).map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>) : <option value="1146303">BANPRESTO (Recommended)</option>}
                                 </select>
                             </div>
-
-                            <div className="form-group">
-                                <label className="form-label">品牌 (Brand) *</label>
-                                <div style={{ background: 'var(--color-bg-secondary)', padding: '12px', borderRadius: '8px' }}>
-                                    {brandOptions.length > 0 && (
-                                        <div style={{ marginBottom: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                            {popularBrands.map(brandName => {
-                                                let match = brandOptions.find(o => o.display_value_name.toLowerCase().includes(brandName.toLowerCase()));
-                                                if (match) return <button key={match.value_id} type="button" className={`btn btn-sm ${formData.brandId == match.value_id ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFormData(prev => ({ ...prev, brandId: match.value_id.toString() }))} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '12px' }}>{match.display_value_name}</button>;
-                                                return null;
-                                            })}
-                                        </div>
-                                    )}
-                                    <select className="form-input form-select" value={formData.brandId} onChange={handleChange} name="brandId">
-                                        <option value="">-- 一覧から選択 --</option>
-                                        {filteredBrandOptions.length > 0 ? filteredBrandOptions.slice(0, 100).map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>) : <option value="1146303">BANPRESTO (Recommended)</option>}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* RIGHT COLUMN */}
-                        <div className="card">
-                            <h3 className="card-title">価格・在庫・物流</h3>
-                            <div className="form-group">
-                                <label className="form-label">仕入れ原価 (JPY)</label>
-                                <input type="number" name="costPrice" className="form-input" value={formData.costPrice} onChange={handleChange} />
-                            </div>
-                            {priceDetails && (
-                                <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '16px', fontSize: '13px' }}>
-                                    <div>推奨価格: <strong>NT${priceDetails.finalTwd.toLocaleString()}</strong></div>
-                                </div>
-                            )}
-                            <div className="form-group"><label className="form-label">販売価格 (TWD) *</label><input type="number" name="price" className="form-input" value={formData.price} onChange={handleChange} required /></div>
-                            <div className="form-group"><label className="form-label">在庫数 *</label><input type="number" name="stock" className="form-input" value={formData.stock} onChange={handleChange} required /></div>
-                            <div className="form-group">
-                                <label className="form-label">物流設定</label>
-                                {logistics.map(l => (
-                                    <label key={l.logistics_channel_id} style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-                                        <input type="checkbox" checked={l.enabled} onChange={(e) => setLogistics(prev => prev.map(item => item.logistics_channel_id === l.logistics_channel_id ? { ...item, enabled: e.target.checked } : item))} />
-                                        {l.logistics_channel_name}
-                                    </label>
-                                ))}
-                            </div>
                         </div>
                     </div>
 
-                    {/* FULL WIDTH SPECIFICATIONS */}
-                    <div className="card" style={{ marginTop: '20px', border: '1px solid #d0d0d0', background: '#fafafa' }}>
-                        <h3 className="card-title">📋 Specifications</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                            <SpecSelect label="Material (PVC)" specKey="material" specData={specs.material} />
-                            <SpecSelect label="Goods Type (Figure)" specKey="goodsType" specData={specs.goodsType} />
-                            <SpecSelect label="Style (Anime)" specKey="style" specData={specs.style} />
-                            <SpecSelect label="Feature (Painted)" specKey="feature" specData={specs.feature} />
-                            <SpecSelect label="Warranty (NA)" specKey="warranty" specData={specs.warranty} />
-
-                            <div className="form-group">
-                                <label className="form-label">Character (Manual or Select)</label>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <input type="text" className="form-input" placeholder="例: 孫悟空" value={characterInput} onChange={(e) => setCharacterInput(e.target.value)} />
-                                        <button type="button" className="btn btn-secondary" onClick={() => handleTranslate('character')} disabled={translating.character}>翻訳</button>
-                                    </div>
-                                    {specs.character.text && <div style={{ color: 'green', fontSize: '0.9em' }}>Translated: {specs.character.text}</div>}
-
-                                    {specs.character.attrId && (
-                                        <select className="form-input form-select" value={specs.character.valueId} onChange={(e) => handleSpecChange('character', e.target.value)} style={{ background: specs.character.valueId ? '#e6fffa' : '#fff' }}>
-                                            <option value="">(Select from list if matched)</option>
-                                            {specs.character.options.map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>)}
-                                        </select>
-                                    )}
-                                </div>
-                            </div>
+                    {/* RIGHT COLUMN */}
+                    <div className="card">
+                        <h3 className="card-title">価格・在庫・物流</h3>
+                        <div className="form-group">
+                            <label className="form-label">仕入れ原価 (JPY)</label>
+                            <input type="number" name="costPrice" className="form-input" value={formData.costPrice} onChange={handleChange} />
                         </div>
-                    </div>
-
-                    <div className="card" style={{ marginTop: '20px' }}>
-                        <h3 className="card-title">画像</h3>
-                        <input type="file" multiple onChange={handleImageUpload} />
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                            {formData.images.map((img, i) => (
-                                <img key={i} src={img.preview || img.url} style={{ width: 80, height: 80, objectFit: 'cover' }} />
+                        {priceDetails && (
+                            <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '16px', fontSize: '13px' }}>
+                                <div>推奨価格: <strong>NT${priceDetails.finalTwd.toLocaleString()}</strong></div>
+                            </div>
+                        )}
+                        <div className="form-group"><label className="form-label">販売価格 (TWD) *</label><input type="number" name="price" className="form-input" value={formData.price} onChange={handleChange} required /></div>
+                        <div className="form-group"><label className="form-label">在庫数 *</label><input type="number" name="stock" className="form-input" value={formData.stock} onChange={handleChange} required /></div>
+                        <div className="form-group">
+                            <label className="form-label">物流設定</label>
+                            {logistics.map(l => (
+                                <label key={l.logistics_channel_id} style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                                    <input type="checkbox" checked={l.enabled} onChange={(e) => setLogistics(prev => prev.map(item => item.logistics_channel_id === l.logistics_channel_id ? { ...item, enabled: e.target.checked } : item))} />
+                                    {l.logistics_channel_name}
+                                </label>
                             ))}
                         </div>
                     </div>
+                </div>
 
-                    <div style={{ marginTop: '20px', textAlign: 'right' }}>
-                        <button type="submit" className="btn btn-primary" disabled={isSubmitting}>出品する</button>
+                {/* FULL WIDTH SPECIFICATIONS */}
+                <div className="card" style={{ marginTop: '20px', border: '1px solid #d0d0d0', background: '#fafafa' }}>
+                    <h3 className="card-title">📋 Specifications</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                        <SpecSelect label="Material (PVC)" specKey="material" specData={specs.material} />
+                        <SpecSelect label="Goods Type (Figure)" specKey="goodsType" specData={specs.goodsType} />
+                        <SpecSelect label="Style (Anime)" specKey="style" specData={specs.style} />
+                        <SpecSelect label="Feature (Painted)" specKey="feature" specData={specs.feature} />
+                        <SpecSelect label="Warranty (NA)" specKey="warranty" specData={specs.warranty} />
+
+                        <div className="form-group">
+                            <label className="form-label">Character (Manual or Select)</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <input type="text" className="form-input" placeholder="例: 孫悟空" value={characterInput} onChange={(e) => setCharacterInput(e.target.value)} />
+                                    <button type="button" className="btn btn-secondary" onClick={() => handleTranslate('character')} disabled={translating.character}>翻訳</button>
+                                </div>
+                                {specs.character.text && <div style={{ color: 'green', fontSize: '0.9em' }}>Translated: {specs.character.text}</div>}
+
+                                {specs.character.attrId && (
+                                    <select className="form-input form-select" value={specs.character.valueId} onChange={(e) => handleSpecChange('character', e.target.value)} style={{ background: specs.character.valueId ? '#e6fffa' : '#fff' }}>
+                                        <option value="">(Select from list if matched)</option>
+                                        {specs.character.options.map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>)}
+                                    </select>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </form>
-            )}
-        </div>
+                </div>
+
+                <div className="card" style={{ marginTop: '20px' }}>
+                    <h3 className="card-title">画像</h3>
+                    <input type="file" multiple onChange={handleImageUpload} />
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                        {formData.images.map((img, i) => (
+                            <img key={i} src={img.preview || img.url} style={{ width: 80, height: 80, objectFit: 'cover' }} />
+                        ))}
+                    </div>
+                </div>
+
+                <div style={{ marginTop: '20px', textAlign: 'right' }}>
+                    <button type="submit" className="btn btn-primary" disabled={isSubmitting}>出品する</button>
+                </div>
+            </form>
+        )
+    }
+        </div >
     )
 }
 
