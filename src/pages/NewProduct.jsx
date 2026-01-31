@@ -548,20 +548,21 @@ function NewProduct() {
                                 <div className="form-group">
                                     <label className="form-label">品牌 (Brand) *</label>
                                     <div style={{ background: 'var(--color-bg-secondary)', padding: '12px', borderRadius: '8px' }}>
-                                        {brandOptions.length > 0 && (
-                                            <div style={{ marginBottom: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                                {popularBrands.map(brandName => {
-                                                    // Use confirmed BRAND_MAP first, fallback to API list
-                                                    const confirmedId = BRAND_MAP[brandName];
-                                                    let match = confirmedId ? { value_id: confirmedId, display_value_name: brandName } : brandOptions.find(o => o.display_value_name.toLowerCase().includes(brandName.toLowerCase()));
-                                                    if (match) return <button key={match.value_id} type="button" className={`btn btn-sm ${formData.brandId == match.value_id ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFormData(prev => ({ ...prev, brandId: match.value_id.toString() }))} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '12px' }}>{match.display_value_name}</button>;
-                                                    return null;
-                                                })}
-                                            </div>
-                                        )}
+                                        {/* Always show popular brand buttons using BRAND_MAP */}
+                                        <div style={{ marginBottom: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            {popularBrands.map(brandName => {
+                                                const brandId = BRAND_MAP[brandName];
+                                                return <button key={brandId} type="button" className={`btn btn-sm ${formData.brandId == brandId ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFormData(prev => ({ ...prev, brandId: brandId.toString() }))} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '12px' }}>{brandName}</button>;
+                                            })}
+                                        </div>
                                         <select className="form-input form-select" value={formData.brandId} onChange={handleChange} name="brandId">
                                             <option value="">-- 一覧から選択 --</option>
-                                            {filteredBrandOptions.length > 0 ? filteredBrandOptions.slice(0, 100).map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>) : <option value="1146303">BANPRESTO (Recommended)</option>}
+                                            {/* Show BRAND_MAP options first */}
+                                            {Object.entries(BRAND_MAP).map(([name, id]) => (
+                                                <option key={id} value={id}>★ {name}</option>
+                                            ))}
+                                            {/* Then show API options if available */}
+                                            {filteredBrandOptions.length > 0 && filteredBrandOptions.slice(0, 100).map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>)}
                                         </select>
                                     </div>
                                 </div>
