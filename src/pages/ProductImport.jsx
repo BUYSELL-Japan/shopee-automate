@@ -138,7 +138,7 @@ function ProductImport() {
         return ''
     }
 
-    // ファイル読み込み
+    // ファイル読み込み（JSON/CSV両対応）
     const handleFileUpload = async (e) => {
         const file = e.target.files[0]
         if (!file) return
@@ -148,28 +148,41 @@ function ProductImport() {
 
         try {
             const text = await file.text()
-            const parsed = parseCSV(text)
+            let parsed = []
 
-            if (parsed.length === 0) {
-                setError('CSVにデータがありません')
+            // ファイル形式を判定
+            const isJson = file.name.endsWith('.json') || text.trim().startsWith('[')
+
+            if (isJson) {
+                // JSON形式
+                parsed = JSON.parse(text)
+                console.log('JSON parsed:', parsed.length, 'items')
+                console.log('Sample item:', parsed[0])
+            } else {
+                // CSV形式（フォールバック）
+                parsed = parseCSV(text)
+            }
+
+            if (!Array.isArray(parsed) || parsed.length === 0) {
+                setError('データが見つかりません')
                 return
             }
 
-            // 必要なカラムを確認（柔軟にマッチング）
+            // 必要なカラムを確認
             const firstRow = parsed[0]
-            const hasParentSKU = hasColumn(firstRow, 'Parent SKU', 'ParentSKU', 'SKU', 'sku', 'parent_sku')
-            const hasItemName = hasColumn(firstRow, '商品名 台湾', '商品名　台湾', '商品名', 'item_name', 'name')
-            const hasAvgPrice = hasColumn(firstRow, '平均価格', '平均仕入価格', '原価', 'cost')
+            const hasParentSKU = 'Parent SKU' in firstRow || 'parent_sku' in firstRow
+            const hasItemName = '商品名　台湾' in firstRow || '商品名' in firstRow
+            const hasAvgPrice = '平均価格' in firstRow || '原価' in firstRow
 
-            console.log('Column detection:', { hasParentSKU, hasItemName, hasAvgPrice, keys: Object.keys(firstRow) })
+            console.log('Column detection:', { hasParentSKU, hasItemName, hasAvgPrice })
 
             if (!hasAvgPrice) {
-                setError('価格カラムが見つかりません（平均価格、原価、cost等）。検出されたカラム: ' + Object.keys(firstRow).join(', '))
+                setError('「平均価格」カラムが見つかりません。検出されたカラム: ' + Object.keys(firstRow).join(', '))
                 return
             }
 
             if (!hasParentSKU && !hasItemName) {
-                setError('商品特定用カラムが見つかりません（Parent SKU、商品名等）。検出されたカラム: ' + Object.keys(firstRow).join(', '))
+                setError('「Parent SKU」または「商品名」カラムが必要です')
                 return
             }
 
@@ -177,7 +190,7 @@ function ProductImport() {
             await matchProducts(parsed)
             setStep(2)
         } catch (e) {
-            setError('CSVの読み込みに失敗しました: ' + e.message)
+            setError('ファイルの読み込みに失敗しました: ' + e.message)
         } finally {
             setIsLoading(false)
         }
@@ -201,11 +214,18 @@ function ProductImport() {
             const matched = []
 
             csvRows.forEach(row => {
-                // 柔軟なカラム名マッチング
-                const parentSku = findColumn(row, 'Parent SKU', 'ParentSKU', 'SKU', 'sku', 'parent_sku')
-                const itemName = findColumn(row, '商品名 台湾', '商品名　台湾', '商品名', 'item_name', 'name')
-                const avgPrice = parseFloat(findColumn(row, '平均価格', '平均仕入価格', '原価', 'cost', 'price')) || 0
-                const sourceUrl = findColumn(row, '仕入れ先URL', '仕入先URL', 'URL', 'url', 'source_url')
+                // JSONの場合は直接プロパティアクセス
+                const parentSku = row['Parent SKU'] || row['parent_sku'] || ''
+                const itemName = row['商品名　台湾'] || row['商品名'] || ''
+
+                // 平均価格：カンマを除去して数値化
+                let avgPriceRaw = row['平均価格'] || row['原価'] || 0
+                if (typeof avgPriceRaw === 'string') {
+                    avgPriceRaw = avgPriceRaw.replace(/,/g, '')  // カンマ除去
+                }
+                const avgPrice = parseFloat(avgPriceRaw) || 0
+
+                const sourceUrl = row['仕入れ先URL'] || row['source_url'] || ''
 
                 console.log('Row data:', { parentSku, itemName, avgPrice, sourceUrl })
 
@@ -384,7 +404,7 @@ function ProductImport() {
             {/* Step 1: アップロード */}
             {step === 1 && (
                 <div className="card">
-                    <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>📄 CSVファイルをアップロード</h3>
+                    <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>📄 JSONファイルをアップロード</h3>
 
                     <div style={{ marginBottom: 'var(--spacing-lg)', padding: 'var(--spacing-md)', background: 'var(--color-bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                         <div style={{ fontWeight: 600, marginBottom: '8px' }}>必要なカラム:</div>
@@ -394,11 +414,14 @@ function ProductImport() {
                             <li><code>平均価格</code> - 平均仕入れ価格（JPY）</li>
                             <li><code>仕入れ先URL</code>（オプション）</li>
                         </ul>
+                        <div style={{ marginTop: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                            💡 スプレッドシートからJSON形式でエクスポートしてください
+                        </div>
                     </div>
 
                     <input
                         type="file"
-                        accept=".csv"
+                        accept=".json,.csv"
                         onChange={handleFileUpload}
                         disabled={isLoading}
                         style={{ display: 'none' }}
@@ -409,7 +432,7 @@ function ProductImport() {
                         className="btn btn-primary"
                         style={{ cursor: 'pointer', display: 'inline-block' }}
                     >
-                        {isLoading ? '⏳ 読み込み中...' : '📁 CSVファイルを選択'}
+                        {isLoading ? '⏳ 読み込み中...' : '📁 ファイルを選択 (JSON推奨)'}
                     </label>
                 </div>
             )}
