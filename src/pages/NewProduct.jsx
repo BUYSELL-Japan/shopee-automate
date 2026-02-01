@@ -855,7 +855,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.material.value_id}
                                         onChange={(e) => updateProductAttr('material', 'value_id', parseInt(e.target.value))}
-                                        style={{ background: productAttrs.material.value_id ? '#e6fffa' : '#fff' }}
+                                        style={{ background: productAttrs.material.value_id ? '#e6fffa' : '#fff', color: '#333' }}
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.material.options.map(opt => (
@@ -875,7 +875,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.goodsType.text}
                                         onChange={(e) => updateProductAttr('goodsType', 'text', e.target.value)}
-                                        style={{ background: productAttrs.goodsType.text ? '#e6fffa' : '#fff' }}
+                                        style={{ background: productAttrs.goodsType.text ? '#e6fffa' : '#fff', color: '#333' }}
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.goodsType.preset_options.map(opt => (
@@ -895,7 +895,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.style.text}
                                         onChange={(e) => updateProductAttr('style', 'text', e.target.value)}
-                                        style={{ background: productAttrs.style.text ? '#e6fffa' : '#fff' }}
+                                        style={{ background: productAttrs.style.text ? '#e6fffa' : '#fff', color: '#333' }}
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.style.preset_options.map(opt => (
@@ -915,7 +915,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.materialFeature.text}
                                         onChange={(e) => updateProductAttr('materialFeature', 'text', e.target.value)}
-                                        style={{ background: productAttrs.materialFeature.text ? '#e6fffa' : '#fff' }}
+                                        style={{ background: productAttrs.materialFeature.text ? '#e6fffa' : '#fff', color: '#333' }}
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.materialFeature.preset_options.map(opt => (
@@ -935,7 +935,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.quantity.text}
                                         onChange={(e) => updateProductAttr('quantity', 'text', e.target.value)}
-                                        style={{ background: productAttrs.quantity.text ? '#e6fffa' : '#fff' }}
+                                        style={{ background: productAttrs.quantity.text ? '#e6fffa' : '#fff', color: '#333' }}
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.quantity.preset_options.map(opt => (
@@ -954,7 +954,7 @@ function NewProduct() {
                                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                         <select
                                             className="form-input form-select"
-                                            style={{ flex: '1', minWidth: '200px', background: productAttrs.character.text ? '#e6fffa' : '#fff' }}
+                                            style={{ flex: '1', minWidth: '200px', background: productAttrs.character.text ? '#e6fffa' : '#fff', color: '#333' }}
                                             value={productAttrs.character.text}
                                             onChange={(e) => updateProductAttr('character', 'text', e.target.value)}
                                         >

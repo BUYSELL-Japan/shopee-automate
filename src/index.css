@@ -516,6 +516,18 @@ ul, ol {
   padding-right: var(--spacing-xl);
 }
 
+/* Select options for light backgrounds */
+.form-select option {
+  background: #fff;
+  color: #333;
+}
+
+/* Attribute section selects with light background need dark text */
+.form-select[style*="background: #e6fffa"],
+.form-select[style*="background: #fff"] {
+  color: #333 !important;
+}
+
 /* ===== Table ===== */
 .table-container {
   overflow-x: auto;
