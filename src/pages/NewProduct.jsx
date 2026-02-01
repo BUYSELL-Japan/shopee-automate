@@ -463,6 +463,7 @@ function NewProduct() {
     // Popular brands with confirmed Shopee Brand IDs
     const BRAND_MAP = {
         'BANPRESTO': 1146303,
+        'SEGA': 1146999,
         'Good Smile Company': 1146546,
         'TAITO': 1802638,
         'Furyu': 1801231,
