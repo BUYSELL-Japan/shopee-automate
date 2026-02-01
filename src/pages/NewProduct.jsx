@@ -31,7 +31,7 @@ const PRODUCT_ATTRIBUTES = {
         label_zh: 'Material',
         options: [
             { value_id: 1207, label_zh: 'Plastic', label_ja: 'プラスチック' },
-            { value_id: 1208, label_zh: 'PVC', label_ja: 'PVC' },
+            { value_id: 1178, label_zh: 'PVC', label_ja: 'PVC' },
             { value_id: 1209, label_zh: 'ABS', label_ja: 'ABS' },
             { value_id: 1210, label_zh: 'Resin', label_ja: 'レジン' },
             { value_id: 0, label_zh: 'Other', label_ja: 'その他（自由入力）', isText: true }
@@ -175,7 +175,7 @@ function NewProduct() {
         descriptionFooter: DEFAULT_FOOTER_TEXT,
         price: '',
         costPrice: '',
-        stock: '',
+        stock: '1',
         category: '101385',
         brandId: '1146303',
         sku: '',
@@ -757,10 +757,7 @@ function NewProduct() {
                                     </div>
                                 </div>
 
-                                <div className="form-group">
-                                    <label className="form-label">共通フッター (自動挿入)</label>
-                                    <textarea name="descriptionFooter" className="form-input form-textarea" style={{ height: '150px', background: '#f9f9f9', fontSize: '0.9em' }} value={formData.descriptionFooter} onChange={handleChange} />
-                                </div>
+                                {/* 共通フッターは自動挿入されるため非表示 */}
 
                                 <div className="form-group">
                                     <label className="form-label">
@@ -827,25 +824,22 @@ function NewProduct() {
                         </div>
 
                         {/* FULL WIDTH: 商品属性セクション */}
-                        <div className="card" style={{ marginTop: '20px', border: '2px solid var(--primary)', background: 'linear-gradient(135deg, #f8f9ff 0%, #fff 100%)' }}>
-                            <h3 className="card-title" style={{ color: 'var(--primary)' }}>📋 商品属性 (Product Attributes)</h3>
-                            <p style={{ fontSize: '0.85em', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                                ※ 固定値は自動設定されます。選択式の属性を入力してください。
-                            </p>
+                        <div className="card" style={{ marginTop: '20px' }}>
+                            <h3 className="card-title">📋 商品属性</h3>
 
                             {/* 固定値の表示 */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px', padding: '12px', background: '#f0f0f0', borderRadius: '8px' }}>
+                            <div style={{ display: 'flex', gap: '24px', marginBottom: '20px', padding: '12px', background: 'var(--color-bg-tertiary)', borderRadius: 'var(--radius-md)', fontSize: '0.9em' }}>
                                 <div>
-                                    <span style={{ fontWeight: 600 }}>🔒 {PRODUCT_ATTRIBUTES.adult.label_ja}</span>
-                                    <span style={{ marginLeft: '8px', color: 'green' }}>✓ {PRODUCT_ATTRIBUTES.adult.fixed_label}</span>
+                                    <span style={{ color: 'var(--color-text-secondary)' }}>🔒 {PRODUCT_ATTRIBUTES.adult.label_ja}:</span>
+                                    <span style={{ marginLeft: '8px', color: 'var(--color-success)' }}>✓ No</span>
                                 </div>
                                 <div>
-                                    <span style={{ fontWeight: 600 }}>🔒 {PRODUCT_ATTRIBUTES.warranty.label_ja}</span>
-                                    <span style={{ marginLeft: '8px', color: 'green' }}>✓ {PRODUCT_ATTRIBUTES.warranty.fixed_label}</span>
+                                    <span style={{ color: 'var(--color-text-secondary)' }}>🔒 {PRODUCT_ATTRIBUTES.warranty.label_ja}:</span>
+                                    <span style={{ marginLeft: '8px', color: 'var(--color-success)' }}>✓ No Warranty</span>
                                 </div>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
                                 {/* Material - 素材 */}
                                 <div className="form-group">
                                     <label className="form-label">
@@ -855,7 +849,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.material.value_id}
                                         onChange={(e) => updateProductAttr('material', 'value_id', parseInt(e.target.value))}
-                                        style={{ background: productAttrs.material.value_id ? '#e6fffa' : '#fff', color: '#333' }}
+
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.material.options.map(opt => (
@@ -875,7 +869,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.goodsType.text}
                                         onChange={(e) => updateProductAttr('goodsType', 'text', e.target.value)}
-                                        style={{ background: productAttrs.goodsType.text ? '#e6fffa' : '#fff', color: '#333' }}
+
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.goodsType.preset_options.map(opt => (
@@ -895,7 +889,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.style.text}
                                         onChange={(e) => updateProductAttr('style', 'text', e.target.value)}
-                                        style={{ background: productAttrs.style.text ? '#e6fffa' : '#fff', color: '#333' }}
+
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.style.preset_options.map(opt => (
@@ -915,7 +909,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.materialFeature.text}
                                         onChange={(e) => updateProductAttr('materialFeature', 'text', e.target.value)}
-                                        style={{ background: productAttrs.materialFeature.text ? '#e6fffa' : '#fff', color: '#333' }}
+
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.materialFeature.preset_options.map(opt => (
@@ -935,7 +929,7 @@ function NewProduct() {
                                         className="form-input form-select"
                                         value={productAttrs.quantity.text}
                                         onChange={(e) => updateProductAttr('quantity', 'text', e.target.value)}
-                                        style={{ background: productAttrs.quantity.text ? '#e6fffa' : '#fff', color: '#333' }}
+
                                     >
                                         <option value="">-- 選択 --</option>
                                         {PRODUCT_ATTRIBUTES.quantity.preset_options.map(opt => (
@@ -954,7 +948,7 @@ function NewProduct() {
                                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                         <select
                                             className="form-input form-select"
-                                            style={{ flex: '1', minWidth: '200px', background: productAttrs.character.text ? '#e6fffa' : '#fff', color: '#333' }}
+                                            style={{ flex: '1', minWidth: '200px' }}
                                             value={productAttrs.character.text}
                                             onChange={(e) => updateProductAttr('character', 'text', e.target.value)}
                                         >
