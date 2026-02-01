@@ -806,7 +806,11 @@ function NewProduct() {
                                 </div>
                                 {priceDetails && (
                                     <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '16px', fontSize: '13px' }}>
-                                        <div>推奨価格: <strong>NT${priceDetails.finalTwd.toLocaleString()}</strong></div>
+                                        <div>推奨価格: <strong style={{ color: 'var(--color-accent-light)' }}>NT${priceDetails.finalTwd.toLocaleString()}</strong></div>
+                                        <div style={{ marginTop: '8px', display: 'flex', gap: '16px' }}>
+                                            <span>想定利益: <strong style={{ color: 'var(--color-success)' }}>NT${Math.round(priceDetails.profitJpy / COSTS.TWD_JPY_RATE).toLocaleString()}</strong></span>
+                                            <span style={{ color: 'var(--color-text-secondary)' }}>（¥{priceDetails.profitJpy.toLocaleString()}）</span>
+                                        </div>
                                     </div>
                                 )}
                                 <div className="form-group"><label className="form-label">販売価格 (TWD) *</label><input type="number" name="price" className="form-input" value={formData.price} onChange={handleChange} required /></div>
