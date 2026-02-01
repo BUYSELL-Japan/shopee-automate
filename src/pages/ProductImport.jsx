@@ -101,7 +101,25 @@ function ProductImport() {
         return data
     }
 
-    // ヘッダー名を柔軟にマッチング
+    // カラムが存在するかチェック（値が空でもtrue）
+    const hasColumn = (row, ...possibleNames) => {
+        for (const name of possibleNames) {
+            // 完全一致
+            if (name in row) return true
+            // 正規化して比較
+            const normalizedName = name.replace(/[\s　]+/g, ' ').trim()
+            for (const key of Object.keys(row)) {
+                const normalizedKey = key.replace(/[\s　]+/g, ' ').trim()
+                if (normalizedKey === normalizedName) return true
+                if (normalizedKey.includes(normalizedName) || normalizedName.includes(normalizedKey)) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    // ヘッダー名を柔軟にマッチング（値を取得）
     const findColumn = (row, ...possibleNames) => {
         for (const name of possibleNames) {
             // 完全一致
@@ -139,9 +157,9 @@ function ProductImport() {
 
             // 必要なカラムを確認（柔軟にマッチング）
             const firstRow = parsed[0]
-            const hasParentSKU = !!findColumn(firstRow, 'Parent SKU', 'ParentSKU', 'SKU', 'sku', 'parent_sku')
-            const hasItemName = !!findColumn(firstRow, '商品名 台湾', '商品名　台湾', '商品名', 'item_name', 'name')
-            const hasAvgPrice = !!findColumn(firstRow, '平均価格', '平均仕入価格', '原価', 'cost', 'price')
+            const hasParentSKU = hasColumn(firstRow, 'Parent SKU', 'ParentSKU', 'SKU', 'sku', 'parent_sku')
+            const hasItemName = hasColumn(firstRow, '商品名 台湾', '商品名　台湾', '商品名', 'item_name', 'name')
+            const hasAvgPrice = hasColumn(firstRow, '平均価格', '平均仕入価格', '原価', 'cost')
 
             console.log('Column detection:', { hasParentSKU, hasItemName, hasAvgPrice, keys: Object.keys(firstRow) })
 
