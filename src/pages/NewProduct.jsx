@@ -3,13 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
 import { getCategories, uploadImage, addItem, getLogistics, getProducts, getItemDetail, getAttributes } from '../services/shopeeApi'
 
-// 推奨価格計算用の定数
+// 推奨価格計算用の定数（実際の取引データに基づく）
 const COSTS = {
+    // 日本国内送料
     YAMATO_JPY: 1350,
-    SLS_TWD: 223,
-    COMMISSION_RATE: 0.09,
-    PROFIT_MARGIN: 0.20,
-    TWD_JPY_RATE: 4.5
+    // Shopee手数料率（実際の取引データより）
+    COMMISSION_RATE: 0.1077,    // 手数料 10.77%
+    SERVICE_FEE_RATE: 0.03,      // 服務費 3%
+    TRANSACTION_FEE_RATE: 0.0254, // 金流服務費 2.54%
+    // 送料関連
+    SLS_NET_TWD: 76,             // SLS実質送料（NT$146 - NT$70リベート）
+    // 利益マージン
+    PROFIT_MARGIN: 0.15,         // 目標利益率 15%
+    // 為替レート
+    TWD_JPY_RATE: 4.7
 }
 
 // ========================================
@@ -368,20 +375,53 @@ function NewProduct() {
     useEffect(() => {
         const cost = parseFloat(formData.costPrice)
         if (!isNaN(cost) && cost > 0) {
-            const slsJpy = COSTS.SLS_TWD * COSTS.TWD_JPY_RATE
-            const totalFixedCostJpy = cost + COSTS.YAMATO_JPY + slsJpy
-            const revenueRate = 1 - COSTS.PROFIT_MARGIN - COSTS.COMMISSION_RATE
+            // 固定費用（円）
+            const yamatoJpy = COSTS.YAMATO_JPY
+            const slsJpy = Math.round(COSTS.SLS_NET_TWD * COSTS.TWD_JPY_RATE)
+            const totalFixedCostJpy = cost + yamatoJpy + slsJpy
+
+            // 手数料率の合計
+            const totalFeeRate = COSTS.COMMISSION_RATE + COSTS.SERVICE_FEE_RATE + COSTS.TRANSACTION_FEE_RATE
+
+            // 推奨価格の計算: 固定費用 / (1 - 手数料率 - 利益率)
+            const revenueRate = 1 - totalFeeRate - COSTS.PROFIT_MARGIN
             const recommendedPriceJpy = Math.ceil(totalFixedCostJpy / revenueRate)
             const recommendedPriceTwd = Math.ceil(recommendedPriceJpy / COSTS.TWD_JPY_RATE)
 
+            // 各手数料の計算（NTD）
+            const commissionTwd = Math.round(recommendedPriceTwd * COSTS.COMMISSION_RATE)
+            const serviceTwd = Math.round(recommendedPriceTwd * COSTS.SERVICE_FEE_RATE)
+            const transactionTwd = Math.round(recommendedPriceTwd * COSTS.TRANSACTION_FEE_RATE)
+            const totalFeesTwd = commissionTwd + serviceTwd + transactionTwd
+
+            // 利益計算
+            const profitTwd = recommendedPriceTwd - COSTS.SLS_NET_TWD - totalFeesTwd - Math.round(totalFixedCostJpy / COSTS.TWD_JPY_RATE) + Math.round(COSTS.SLS_NET_TWD)
+            const actualProfitTwd = recommendedPriceTwd - COSTS.SLS_NET_TWD - totalFeesTwd - Math.round((cost + yamatoJpy) / COSTS.TWD_JPY_RATE)
+            const profitJpy = Math.round(actualProfitTwd * COSTS.TWD_JPY_RATE)
+
             setPriceDetails({
-                baseCost: cost,
-                shippingJpy: COSTS.YAMATO_JPY,
-                slsJpy: Math.round(slsJpy),
-                commissionJpy: Math.round(recommendedPriceJpy * COSTS.COMMISSION_RATE),
-                profitJpy: Math.round(recommendedPriceJpy * COSTS.PROFIT_MARGIN),
-                totalJpy: recommendedPriceJpy,
-                finalTwd: recommendedPriceTwd
+                // 原価
+                baseCostJpy: cost,
+                baseCostTwd: Math.round(cost / COSTS.TWD_JPY_RATE),
+                // 送料
+                yamatoJpy: yamatoJpy,
+                yamatoTwd: Math.round(yamatoJpy / COSTS.TWD_JPY_RATE),
+                slsTwd: COSTS.SLS_NET_TWD,
+                slsJpy: slsJpy,
+                // 手数料
+                commissionTwd: commissionTwd,
+                serviceTwd: serviceTwd,
+                transactionTwd: transactionTwd,
+                totalFeesTwd: totalFeesTwd,
+                totalFeesJpy: Math.round(totalFeesTwd * COSTS.TWD_JPY_RATE),
+                // 利益
+                profitTwd: actualProfitTwd,
+                profitJpy: profitJpy,
+                // 最終価格
+                finalTwd: recommendedPriceTwd,
+                finalJpy: recommendedPriceJpy,
+                // 手数料率
+                totalFeeRate: totalFeeRate
             })
             setFormData(prev => ({ ...prev, price: recommendedPriceTwd }))
         } else {
@@ -805,11 +845,60 @@ function NewProduct() {
                                     <input type="number" name="costPrice" className="form-input" value={formData.costPrice} onChange={handleChange} />
                                 </div>
                                 {priceDetails && (
-                                    <div style={{ background: 'var(--color-bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '16px', fontSize: '13px' }}>
-                                        <div>推奨価格: <strong style={{ color: 'var(--color-accent-light)' }}>NT${priceDetails.finalTwd.toLocaleString()}</strong></div>
-                                        <div style={{ marginTop: '8px', display: 'flex', gap: '16px' }}>
-                                            <span>想定利益: <strong style={{ color: 'var(--color-success)' }}>NT${Math.round(priceDetails.profitJpy / COSTS.TWD_JPY_RATE).toLocaleString()}</strong></span>
-                                            <span style={{ color: 'var(--color-text-secondary)' }}>（¥{priceDetails.profitJpy.toLocaleString()}）</span>
+                                    <div style={{ background: 'var(--color-bg-tertiary)', padding: '16px', borderRadius: 'var(--radius-md)', marginBottom: '16px', fontSize: '13px' }}>
+                                        {/* 推奨価格 */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--color-border)' }}>
+                                            <span style={{ fontSize: '14px', fontWeight: 600 }}>推奨価格</span>
+                                            <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--color-accent-light)' }}>
+                                                NT${priceDetails.finalTwd.toLocaleString()}
+                                            </span>
+                                        </div>
+
+                                        {/* コスト内訳 */}
+                                        <div style={{ marginBottom: '12px' }}>
+                                            <div style={{ color: 'var(--color-text-secondary)', marginBottom: '6px', fontSize: '12px' }}>📦 コスト</div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                                <span>仕入れ原価</span>
+                                                <span>¥{priceDetails.baseCostJpy.toLocaleString()} (NT${priceDetails.baseCostTwd.toLocaleString()})</span>
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                                <span>ヤマト送料</span>
+                                                <span>¥{priceDetails.yamatoJpy.toLocaleString()} (NT${priceDetails.yamatoTwd.toLocaleString()})</span>
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                                <span>SLS送料 (実質)</span>
+                                                <span>NT${priceDetails.slsTwd.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* 手数料内訳 */}
+                                        <div style={{ marginBottom: '12px' }}>
+                                            <div style={{ color: 'var(--color-text-secondary)', marginBottom: '6px', fontSize: '12px' }}>💰 手数料 ({(priceDetails.totalFeeRate * 100).toFixed(1)}%)</div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                                <span>Commission (10.77%)</span>
+                                                <span style={{ color: 'var(--color-error)' }}>-NT${priceDetails.commissionTwd.toLocaleString()}</span>
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                                <span>Service (3%)</span>
+                                                <span style={{ color: 'var(--color-error)' }}>-NT${priceDetails.serviceTwd.toLocaleString()}</span>
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                                <span>Transaction (2.54%)</span>
+                                                <span style={{ color: 'var(--color-error)' }}>-NT${priceDetails.transactionTwd.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* 想定利益 */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '12px', borderTop: '1px solid var(--color-border)' }}>
+                                            <span style={{ fontSize: '14px', fontWeight: 600 }}>💵 想定利益</span>
+                                            <div style={{ textAlign: 'right' }}>
+                                                <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--color-success)' }}>
+                                                    NT${priceDetails.profitTwd.toLocaleString()}
+                                                </span>
+                                                <span style={{ marginLeft: '8px', color: 'var(--color-text-secondary)' }}>
+                                                    (¥{priceDetails.profitJpy.toLocaleString()})
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
