@@ -3,6 +3,28 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
 import { formatPrice, updateShopeeProduct, updateDbProduct } from '../services/shopeeApi'
 
+// ソースURL配列を3つの配列に変換
+const parseSourceUrls = (sourceUrl) => {
+    if (!sourceUrl) return ['', '', '']
+    try {
+        const parsed = JSON.parse(sourceUrl)
+        if (Array.isArray(parsed)) {
+            // 3つに合わせる
+            return [parsed[0] || '', parsed[1] || '', parsed[2] || '']
+        }
+        return [sourceUrl, '', '']
+    } catch {
+        return [sourceUrl, '', '']
+    }
+}
+
+// ソースURL配列をJSONに変換（空のものは除外）
+const formatSourceUrls = (urls) => {
+    const validUrls = urls.filter(u => u && u.trim())
+    if (validUrls.length === 0) return null
+    return JSON.stringify(validUrls)
+}
+
 function ProductEdit() {
     const { id } = useParams()
     const navigate = useNavigate()
@@ -22,7 +44,7 @@ function ProductEdit() {
         stock: '',
         notes: '',
         cost_price: '',
-        source_url: ''
+        source_urls: ['', '', '']  // 3つの仕入れ先URL
     })
 
     useEffect(() => {
@@ -50,7 +72,7 @@ function ProductEdit() {
                         stock: p.stock || 0,
                         notes: p.notes || '',
                         cost_price: p.cost_price || '',
-                        source_url: p.source_url || ''
+                        source_urls: parseSourceUrls(p.source_url)
                     })
                 } else {
                     // Shopee APIから取得
@@ -69,7 +91,7 @@ function ProductEdit() {
                             stock: p.stock || 0,
                             notes: '',
                             cost_price: '',
-                            source_url: ''
+                            source_urls: ['', '', '']
                         })
                     } else {
                         setError('商品が見つかりませんでした')
@@ -119,7 +141,7 @@ function ProductEdit() {
                     stock: updates.stock,
                     notes: formData.notes,
                     cost_price: parseFloat(formData.cost_price) || null,
-                    source_url: formData.source_url || null
+                    source_url: formatSourceUrls(formData.source_urls)
                 })
 
                 if (shopeeResult.status === 'partial_error') {
@@ -357,16 +379,23 @@ function ProductEdit() {
                         </div>
                         <div className="form-group">
                             <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                🔗 仕入れ先URL
+                                🔗 仕入れ先URL（最大3つ）
                             </label>
-                            <input
-                                type="url"
-                                name="source_url"
-                                className="form-input"
-                                value={formData.source_url}
-                                onChange={handleInputChange}
-                                placeholder="https://..."
-                            />
+                            {formData.source_urls.map((url, idx) => (
+                                <input
+                                    key={idx}
+                                    type="url"
+                                    className="form-input"
+                                    value={url}
+                                    onChange={(e) => {
+                                        const newUrls = [...formData.source_urls]
+                                        newUrls[idx] = e.target.value
+                                        setFormData(prev => ({ ...prev, source_urls: newUrls }))
+                                    }}
+                                    placeholder={`仕入れ先URL ${idx + 1}`}
+                                    style={{ marginBottom: idx < 2 ? '8px' : 0 }}
+                                />
+                            ))}
                         </div>
                     </div>
 

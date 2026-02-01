@@ -187,7 +187,8 @@ function NewProduct() {
         brandId: '1146303',
         sku: '',
         weight: '0.5',
-        images: []
+        images: [],
+        sourceUrls: ['', '', '']  // 仕入れ先URL（3つまで）
     })
 
     // 属性用状態（新方式）
@@ -721,6 +722,28 @@ function NewProduct() {
                 const msg = result.message || result.error || (result.response && result.response.message) || "Unknown Error";
                 alert(`出品エラー: ${msg}\n\n(詳細: ${JSON.stringify(result.response || result)})`)
             } else {
+                // D1に仕入れ情報を保存（Shopee APIには送信しない）
+                const newItemId = result.response?.item_id || result.item_id
+                if (newItemId && (formData.costPrice || formData.sourceUrls.some(url => url))) {
+                    try {
+                        // ソースURLをJSONに変換（空でないもののみ）
+                        const validUrls = formData.sourceUrls.filter(url => url && url.trim())
+                        const sourceUrlJson = validUrls.length > 0 ? JSON.stringify(validUrls) : null
+
+                        await fetch(`/api/db/products?shop_id=${shopId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                item_id: newItemId,
+                                cost_price: parseFloat(formData.costPrice) || null,
+                                source_url: sourceUrlJson
+                            })
+                        })
+                        console.log('D1 saved cost_price and source_urls')
+                    } catch (e) {
+                        console.log('D1 save failed:', e)
+                    }
+                }
                 alert('✅ 出品に成功しました！')
                 navigate('/products')
             }
@@ -902,6 +925,41 @@ function NewProduct() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* 仕入れ情報セクション */}
+                                <div style={{ background: 'var(--color-bg-tertiary)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--spacing-md)' }}>
+                                    <div style={{ fontWeight: 600, marginBottom: 'var(--spacing-sm)', color: 'var(--color-primary)' }}>📦 仕入れ情報（D1のみ保存）</div>
+                                    <div className="form-group">
+                                        <label className="form-label">仕入れ原価 (JPY)</label>
+                                        <input
+                                            type="number"
+                                            name="costPrice"
+                                            className="form-input"
+                                            value={formData.costPrice}
+                                            onChange={handleChange}
+                                            placeholder="平均仕入れ価格（日本円）"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">仕入れ先URL（最大3つ）</label>
+                                        {formData.sourceUrls.map((url, idx) => (
+                                            <input
+                                                key={idx}
+                                                type="url"
+                                                className="form-input"
+                                                value={url}
+                                                onChange={(e) => {
+                                                    const newUrls = [...formData.sourceUrls]
+                                                    newUrls[idx] = e.target.value
+                                                    setFormData(prev => ({ ...prev, sourceUrls: newUrls }))
+                                                }}
+                                                placeholder={`仕入れ先URL ${idx + 1}`}
+                                                style={{ marginBottom: idx < 2 ? '8px' : 0 }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+
                                 <div className="form-group"><label className="form-label">販売価格 (TWD) *</label><input type="number" name="price" className="form-input" value={formData.price} onChange={handleChange} required /></div>
                                 <div className="form-group"><label className="form-label">在庫数 *</label><input type="number" name="stock" className="form-input" value={formData.stock} onChange={handleChange} required /></div>
                                 <div className="form-group">

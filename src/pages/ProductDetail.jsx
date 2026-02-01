@@ -390,14 +390,24 @@ function ProductDetail() {
 
                     {/* 利益予想セクション */}
                     <div style={{ marginTop: 'var(--spacing-xl)' }}>
-                        <h3 style={{ marginBottom: 'var(--spacing-md)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h3 style={{ marginBottom: 'var(--spacing-md)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             💰 利益予想
-                            {product.source_url && (
-                                <a href={product.source_url} target="_blank" rel="noopener noreferrer"
-                                    style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-primary)' }}>
-                                    🔗 仕入れ先
-                                </a>
-                            )}
+                            {product.source_url && (() => {
+                                // JSON配列の場合はパース、それ以外は単一URL
+                                let urls = []
+                                try {
+                                    urls = JSON.parse(product.source_url)
+                                    if (!Array.isArray(urls)) urls = [product.source_url]
+                                } catch {
+                                    urls = [product.source_url]
+                                }
+                                return urls.filter(u => u).map((url, idx) => (
+                                    <a key={idx} href={url} target="_blank" rel="noopener noreferrer"
+                                        style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-primary)', marginLeft: idx > 0 ? '8px' : 0 }}>
+                                        🔗 仕入れ先{urls.length > 1 ? ` ${idx + 1}` : ''}
+                                    </a>
+                                ))
+                            })()}
                         </h3>
 
                         {product.cost_price ? (() => {
