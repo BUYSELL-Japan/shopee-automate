@@ -387,40 +387,30 @@ function ProfitCalculator() {
             </div>
 
             {/* 費用設定 */}
+            {/* 費用設定表示（参照用） */}
             <div className="card" style={{ marginBottom: 'var(--spacing-xl)' }}>
-                <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>⚙️ デフォルト費用設定</h3>
+                <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>⚙️ 現在の費用設定</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--spacing-md)' }}>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">手数料率 (%)</label>
-                        <input
-                            type="number"
-                            className="form-input"
-                            value={costSettings.commissionRate * 100}
-                            onChange={(e) => setCostSettings(prev => ({ ...prev, commissionRate: parseFloat(e.target.value) / 100 || 0 }))}
-                            min="0"
-                            max="100"
-                            step="0.1"
-                        />
+                    <div style={{ padding: 'var(--spacing-md)', background: 'var(--color-bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>手数料合計</div>
+                        <div style={{ fontWeight: 600, fontSize: 'var(--font-size-lg)' }}>{(TOTAL_FEE_RATE * 100).toFixed(2)}%</div>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                            Commission: {(COSTS.COMMISSION_RATE * 100).toFixed(2)}%<br />
+                            Service: {(COSTS.SERVICE_FEE_RATE * 100).toFixed(2)}%<br />
+                            Transaction: {(COSTS.TRANSACTION_FEE_RATE * 100).toFixed(2)}%
+                        </div>
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">ヤマト送料 (¥)</label>
-                        <input
-                            type="number"
-                            className="form-input"
-                            value={costSettings.yamatoShipping}
-                            onChange={(e) => setCostSettings(prev => ({ ...prev, yamatoShipping: parseFloat(e.target.value) || 0 }))}
-                            min="0"
-                        />
+                    <div style={{ padding: 'var(--spacing-md)', background: 'var(--color-bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>ヤマト送料</div>
+                        <div style={{ fontWeight: 600, fontSize: 'var(--font-size-lg)' }}>¥{COSTS.YAMATO_JPY.toLocaleString()}</div>
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">SLS送料 (NT$)</label>
-                        <input
-                            type="number"
-                            className="form-input"
-                            value={costSettings.slsShipping}
-                            onChange={(e) => setCostSettings(prev => ({ ...prev, slsShipping: parseFloat(e.target.value) || 0 }))}
-                            min="0"
-                        />
+                    <div style={{ padding: 'var(--spacing-md)', background: 'var(--color-bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>SLS送料</div>
+                        <div style={{ fontWeight: 600, fontSize: 'var(--font-size-lg)' }}>NT${COSTS.SLS_NET_TWD}</div>
+                    </div>
+                    <div style={{ padding: 'var(--spacing-md)', background: 'var(--color-bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>為替レート</div>
+                        <div style={{ fontWeight: 600, fontSize: 'var(--font-size-lg)' }}>1 NT$ = ¥{COSTS.TWD_JPY_RATE}</div>
                     </div>
                 </div>
             </div>
