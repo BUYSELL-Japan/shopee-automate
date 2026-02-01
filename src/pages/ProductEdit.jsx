@@ -20,7 +20,9 @@ function ProductEdit() {
         description: '',
         price: '',
         stock: '',
-        notes: ''
+        notes: '',
+        cost_price: '',
+        source_url: ''
     })
 
     useEffect(() => {
@@ -46,7 +48,9 @@ function ProductEdit() {
                         description: p.description || '',
                         price: p.current_price || p.original_price || '',
                         stock: p.stock || 0,
-                        notes: p.notes || ''
+                        notes: p.notes || '',
+                        cost_price: p.cost_price || '',
+                        source_url: p.source_url || ''
                     })
                 } else {
                     // Shopee APIから取得
@@ -63,7 +67,9 @@ function ProductEdit() {
                             description: p.description || '',
                             price: p.price || '',
                             stock: p.stock || 0,
-                            notes: ''
+                            notes: '',
+                            cost_price: '',
+                            source_url: ''
                         })
                     } else {
                         setError('商品が見つかりませんでした')
@@ -111,7 +117,9 @@ function ProductEdit() {
                     description: formData.description,
                     current_price: updates.price,
                     stock: updates.stock,
-                    notes: formData.notes
+                    notes: formData.notes,
+                    cost_price: parseFloat(formData.cost_price) || null,
+                    source_url: formData.source_url || null
                 })
 
                 if (shopeeResult.status === 'partial_error') {
@@ -330,6 +338,34 @@ function ProductEdit() {
                                 onChange={handleInputChange}
                                 placeholder="0"
                                 min="0"
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--spacing-lg)' }}>
+                        <div className="form-group">
+                            <label className="form-label">仕入れ原価 (¥)</label>
+                            <input
+                                type="number"
+                                name="cost_price"
+                                className="form-input"
+                                value={formData.cost_price}
+                                onChange={handleInputChange}
+                                placeholder="平均仕入れ価格"
+                                min="0"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                🔗 仕入れ先URL
+                            </label>
+                            <input
+                                type="url"
+                                name="source_url"
+                                className="form-input"
+                                value={formData.source_url}
+                                onChange={handleInputChange}
+                                placeholder="https://..."
                             />
                         </div>
                     </div>

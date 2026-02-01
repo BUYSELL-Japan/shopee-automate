@@ -33,6 +33,7 @@ function Sidebar() {
         { path: '/products', icon: '📦', label: '商品一覧' },
         { path: '/products/new', icon: '➕', label: '新規出品' },
         { path: '/bulk-upload', icon: '📤', label: '一括出品' },
+        { path: '/import', icon: '📥', label: '仕入れインポート' },
         { path: '/orders', icon: '🛒', label: '注文管理' },
         { path: '/profit', icon: '💰', label: '利益計算' },
     ]

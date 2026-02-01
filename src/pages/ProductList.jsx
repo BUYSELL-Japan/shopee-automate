@@ -53,6 +53,7 @@ function ProductList() {
                     // D1の商品データをShopee形式に変換
                     const dbProducts = (result.data.products || []).map(p => ({
                         id: p.item_id || p.id,
+                        item_sku: p.item_sku,  // Parent SKU
                         name: p.item_name,
                         description: p.description,
                         price: p.current_price || p.original_price || 0,
@@ -449,10 +450,52 @@ function ProductList() {
     )
 }
 
+// 費用定数（NewProductと同じ）
+const COSTS = {
+    COMMISSION_RATE: 0.1077,
+    SERVICE_FEE_RATE: 0.03,
+    TRANSACTION_FEE_RATE: 0.0254,
+    YAMATO_JPY: 1350,
+    SLS_NET_TWD: 76,
+    TWD_JPY_RATE: 4.7
+}
+const TOTAL_FEE_RATE = COSTS.COMMISSION_RATE + COSTS.SERVICE_FEE_RATE + COSTS.TRANSACTION_FEE_RATE
+
+// 利益計算関数
+function calculateProfit(costPriceJpy, sellingPriceTwd) {
+    if (!costPriceJpy || costPriceJpy <= 0) return null
+    const salesJpy = Math.round(sellingPriceTwd * COSTS.TWD_JPY_RATE)
+    const feesTwd = Math.round(sellingPriceTwd * TOTAL_FEE_RATE)
+    const feesJpy = Math.round(feesTwd * COSTS.TWD_JPY_RATE)
+    const slsJpy = Math.round(COSTS.SLS_NET_TWD * COSTS.TWD_JPY_RATE)
+    const totalCostJpy = costPriceJpy + COSTS.YAMATO_JPY + slsJpy + feesJpy
+    const profitJpy = salesJpy - totalCostJpy
+    return { profitJpy, isLoss: profitJpy < 0 }
+}
+
 // 商品カードコンポーネント
 function ProductCard({ product, dataSource }) {
+    const profit = calculateProfit(product.cost_price, product.price)
+
     return (
-        <div className="card product-card">
+        <div className="card product-card" style={{ position: 'relative' }}>
+            {/* 赤字警告バッジ */}
+            {profit?.isLoss && (
+                <div style={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    background: 'rgba(239, 68, 68, 0.9)',
+                    color: 'white',
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 'var(--font-size-xs)',
+                    fontWeight: 600,
+                    zIndex: 10
+                }}>
+                    ⚠️ 赤字
+                </div>
+            )}
             {product.image ? (
                 <img
                     src={product.image}
@@ -477,12 +520,63 @@ function ProductCard({ product, dataSource }) {
                         ¥{twdToJpy(product.price || 0).toLocaleString()}
                     </div>
                 </div>
+
+                {/* 原価・利益表示 */}
+                {product.cost_price > 0 && (
+                    <div style={{
+                        marginTop: 'var(--spacing-xs)',
+                        padding: 'var(--spacing-xs)',
+                        background: profit?.isLoss ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: 'var(--font-size-xs)'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>原価:</span>
+                            <span>¥{product.cost_price.toLocaleString()}</span>
+                        </div>
+                        {profit && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>利益:</span>
+                                <span style={{
+                                    fontWeight: 600,
+                                    color: profit.isLoss ? 'var(--color-error)' : 'var(--color-success)'
+                                }}>
+                                    ¥{profit.profitJpy.toLocaleString()}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 <div className="product-meta">
                     <span>在庫: {product.stock}</span>
                     <span className={`badge ${getStatusBadge(product.status).className}`}>
                         {getStatusBadge(product.status).label}
                     </span>
                 </div>
+
+                {/* 仕入れ先URL */}
+                {product.source_url && (
+                    <a
+                        href={product.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                            display: 'block',
+                            marginTop: 'var(--spacing-xs)',
+                            fontSize: 'var(--font-size-xs)',
+                            color: 'var(--color-primary)',
+                            textDecoration: 'none',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                        }}
+                        title={product.source_url}
+                    >
+                        🔗 仕入れ先
+                    </a>
+                )}
+
                 {dataSource === 'd1' && (
                     <div style={{ marginTop: 'var(--spacing-sm)' }}>
                         <span className="d1-badge">
