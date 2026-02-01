@@ -12,6 +12,120 @@ const COSTS = {
     TWD_JPY_RATE: 4.5
 }
 
+// ========================================
+// 属性定義（Shopee Taiwan フィギュアカテゴリ用）
+// ========================================
+const PRODUCT_ATTRIBUTES = {
+    // Adult products - 必須項目（固定値）
+    adult: {
+        attribute_id: 101044,
+        label_ja: '成人向け商品',
+        label_zh: 'Adult products',
+        fixed_value_id: 11441, // No
+        fixed_label: 'No / いいえ'
+    },
+    // Material - 素材
+    material: {
+        attribute_id: 100134,
+        label_ja: '素材',
+        label_zh: 'Material',
+        options: [
+            { value_id: 1207, label_zh: 'Plastic', label_ja: 'プラスチック' },
+            { value_id: 1208, label_zh: 'PVC', label_ja: 'PVC' },
+            { value_id: 1209, label_zh: 'ABS', label_ja: 'ABS' },
+            { value_id: 1210, label_zh: 'Resin', label_ja: 'レジン' },
+            { value_id: 0, label_zh: 'Other', label_ja: 'その他（自由入力）', isText: true }
+        ]
+    },
+    // Style - スタイル
+    style: {
+        attribute_id: 100169,
+        label_ja: 'スタイル',
+        label_zh: 'Style',
+        is_text: true, // value_id=0 で自由入力
+        preset_options: [
+            { value: '動漫風格', label_ja: 'アニメ風' },
+            { value: '日系', label_ja: '日系' },
+            { value: '和風', label_ja: '和風' },
+            { value: '可愛', label_ja: 'かわいい' },
+            { value: 'SF', label_ja: 'SF' },
+            { value: '奇幻', label_ja: 'ファンタジー' }
+        ]
+    },
+    // Warranty Type - 保証タイプ（固定値）
+    warranty: {
+        attribute_id: 100370,
+        label_ja: '保証タイプ',
+        label_zh: 'Warranty Type',
+        fixed_value_id: 5576, // No Warranty
+        fixed_label: 'No Warranty / 保証なし'
+    },
+    // Character - キャラクター
+    character: {
+        attribute_id: 100680,
+        label_ja: 'キャラクター',
+        label_zh: 'Character',
+        is_text: true, // value_id=0 で自由入力
+        preset_options: [
+            { value: '初音未來', label_ja: '初音ミク' },
+            { value: '孫悟空', label_ja: '孫悟空' },
+            { value: '魯夫', label_ja: 'ルフィ' },
+            { value: '炭治郎', label_ja: '竈門炭治郎' },
+            { value: '禰豆子', label_ja: '竈門禰豆子' },
+            { value: '五條悟', label_ja: '五条悟' },
+            { value: '安妮亞', label_ja: 'アーニャ' },
+            { value: '索隆', label_ja: 'ゾロ' },
+            { value: '娜美', label_ja: 'ナミ' },
+            { value: '其他', label_ja: 'その他（自由入力）' }
+        ]
+    },
+    // Quantity - 数量
+    quantity: {
+        attribute_id: 100999,
+        label_ja: '数量',
+        label_zh: 'Quantity',
+        is_text: true, // value_id=0 で自由入力
+        preset_options: [
+            { value: '1', label_ja: '1個' },
+            { value: '2', label_ja: '2個' },
+            { value: '3', label_ja: '3個' },
+            { value: '1套', label_ja: '1セット' }
+        ]
+    },
+    // Material Feature - 素材特性
+    materialFeature: {
+        attribute_id: 101394,
+        label_ja: '素材特性',
+        label_zh: 'Material Feature',
+        is_text: true, // value_id=0 で自由入力
+        preset_options: [
+            { value: '已上色', label_ja: '塗装済み' },
+            { value: '未上色', label_ja: '未塗装' },
+            { value: '可動式', label_ja: '可動式' },
+            { value: '固定姿勢', label_ja: '固定ポーズ' },
+            { value: '限量版', label_ja: '限定版' }
+        ]
+    },
+    // Goods Type - 商品タイプ
+    goodsType: {
+        attribute_id: 100131,
+        label_ja: '商品タイプ',
+        label_zh: 'Goods Type',
+        is_text: true, // value_id=0 で自由入力
+        preset_options: [
+            { value: '手辦', label_ja: 'フィギュア' },
+            { value: '模型', label_ja: '模型' },
+            { value: '公仔', label_ja: 'ドール/人形' },
+            { value: '景品', label_ja: 'プライズ' },
+            { value: '娃娃', label_ja: 'ぬいぐるみ' },
+            { value: '盒玩', label_ja: '食玩/BOX' },
+            { value: '扭蛋', label_ja: 'ガチャ' },
+            { value: '黏土人', label_ja: 'ねんどろいど' },
+            { value: 'Q版', label_ja: 'Q posket' }
+        ]
+    }
+};
+
 // デフォルトのフッターテキスト
 const DEFAULT_FOOTER_TEXT = `官方授權正品
 
@@ -69,7 +183,17 @@ function NewProduct() {
         images: []
     })
 
-    // スペック用状態
+    // 属性用状態（新方式）
+    const [productAttrs, setProductAttrs] = useState({
+        material: { value_id: 1207, text: '' },          // デフォルト: Plastic
+        style: { value_id: 0, text: '動漫風格' },         // デフォルト: アニメ風
+        character: { value_id: 0, text: '' },            // 自由入力
+        quantity: { value_id: 0, text: '1' },            // デフォルト: 1
+        materialFeature: { value_id: 0, text: '已上色' }, // デフォルト: 塗装済み
+        goodsType: { value_id: 0, text: '手辦' }         // デフォルト: フィギュア
+    })
+
+    // 旧スペック用状態（互換性のため残す）
     const [specs, setSpecs] = useState({
         material: { attrId: null, valueId: '', options: [] },
         goodsType: { attrId: null, valueId: '', options: [] },
@@ -85,8 +209,6 @@ function NewProduct() {
     const [logistics, setLogistics] = useState([])
     const [brandAttributeId, setBrandAttributeId] = useState(null)
     const [brandOptions, setBrandOptions] = useState([])
-    const ADULT_ATTR_ID = 101044;
-    const ADULT_VALUE_ID = 11441;
     const [isLoadingBrands, setIsLoadingBrands] = useState(false)
     const [brandFilter, setBrandFilter] = useState('')
     const [debugAttributes, setDebugAttributes] = useState(null)
@@ -98,6 +220,14 @@ function NewProduct() {
     const [priceDetails, setPriceDetails] = useState(null)
     const [sourceItemId, setSourceItemId] = useState('47000206128')
     const [isFetchingSource, setIsFetchingSource] = useState(false)
+
+    // 属性更新ヘルパー
+    const updateProductAttr = (key, field, value) => {
+        setProductAttrs(prev => ({
+            ...prev,
+            [key]: { ...prev[key], [field]: value }
+        }))
+    }
 
     useEffect(() => {
         if (isConnected && accessToken && shopId) {
@@ -273,14 +403,12 @@ function NewProduct() {
             if (result.status === 'success') {
                 if (field === 'character') {
                     const translated = result.translation;
-                    let matchId = '';
-                    if (specs.character.options.length > 0) {
-                        const match = specs.character.options.find(o => o.display_value_name === translated || o.original_value_name === translated);
-                        if (match) matchId = match.value_id;
-                    }
+                    // 新しい属性システムに翻訳結果を反映
+                    updateProductAttr('character', 'text', translated);
+                    // 旧システムにも反映（互換性のため）
                     setSpecs(prev => ({
                         ...prev,
-                        character: { ...prev.character, text: translated, translated: translated, valueId: matchId }
+                        character: { ...prev.character, text: translated, translated: translated }
                     }));
                 } else {
                     setFormData(prev => ({ ...prev, [field]: result.translation }))
@@ -467,21 +595,55 @@ function NewProduct() {
             const fullDescription = `${formData.description}\n\n${formData.descriptionFooter}`;
 
             const attributes = []
-            // Adult
-            attributes.push({ attribute_id: ADULT_ATTR_ID, attribute_value_list: [{ value_id: ADULT_VALUE_ID }] });
 
-            // Specs
-            const addSpec = (specObj) => {
-                if (specObj && specObj.attrId && specObj.valueId) {
-                    attributes.push({ attribute_id: specObj.attrId, attribute_value_list: [{ value_id: parseInt(specObj.valueId) }] });
+            // Adult products（必須・固定）
+            attributes.push({
+                attribute_id: PRODUCT_ATTRIBUTES.adult.attribute_id,
+                attribute_value_list: [{ value_id: PRODUCT_ATTRIBUTES.adult.fixed_value_id }]
+            });
+
+            // Warranty Type（固定）
+            attributes.push({
+                attribute_id: PRODUCT_ATTRIBUTES.warranty.attribute_id,
+                attribute_value_list: [{ value_id: PRODUCT_ATTRIBUTES.warranty.fixed_value_id }]
+            });
+
+            // 新しい属性システムからの追加
+            const addNewAttr = (attrKey) => {
+                const attrDef = PRODUCT_ATTRIBUTES[attrKey];
+                const attrVal = productAttrs[attrKey];
+                if (!attrDef || !attrVal) return;
+
+                if (attrDef.is_text || attrVal.value_id === 0) {
+                    // テキスト入力型属性
+                    if (attrVal.text) {
+                        attributes.push({
+                            attribute_id: attrDef.attribute_id,
+                            attribute_value_list: [{
+                                value_id: 0,
+                                original_value_name: attrVal.text
+                            }]
+                        });
+                    }
+                } else if (attrVal.value_id) {
+                    // 選択型属性
+                    attributes.push({
+                        attribute_id: attrDef.attribute_id,
+                        attribute_value_list: [{ value_id: attrVal.value_id }]
+                    });
                 }
             };
-            addSpec(specs.material);
-            addSpec(specs.goodsType);
-            addSpec(specs.style);
-            addSpec(specs.feature);
-            addSpec(specs.warranty);
-            addSpec(specs.character);
+
+            addNewAttr('material');
+            addNewAttr('style');
+            addNewAttr('character');
+            addNewAttr('quantity');
+            addNewAttr('materialFeature');
+            addNewAttr('goodsType');
+
+            console.log('=== ATTRIBUTE LIST FOR SUBMISSION ===');
+            console.log(JSON.stringify(attributes, null, 2));
+            console.log('=====================================');
 
             // Brand
             let brandPayload = undefined;
@@ -664,31 +826,173 @@ function NewProduct() {
                             </div>
                         </div>
 
-                        {/* FULL WIDTH SPECIFICATIONS */}
-                        <div className="card" style={{ marginTop: '20px', border: '1px solid #d0d0d0', background: '#fafafa' }}>
-                            <h3 className="card-title">📋 Specifications</h3>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                                <SpecSelect label="Material (PVC)" specKey="material" specData={specs.material} onChange={handleSpecChange} />
-                                <SpecSelect label="Goods Type (Figure)" specKey="goodsType" specData={specs.goodsType} onChange={handleSpecChange} />
-                                <SpecSelect label="Style (Anime)" specKey="style" specData={specs.style} onChange={handleSpecChange} />
-                                <SpecSelect label="Feature (Painted)" specKey="feature" specData={specs.feature} onChange={handleSpecChange} />
-                                <SpecSelect label="Warranty (NA)" specKey="warranty" specData={specs.warranty} onChange={handleSpecChange} />
+                        {/* FULL WIDTH: 商品属性セクション */}
+                        <div className="card" style={{ marginTop: '20px', border: '2px solid var(--primary)', background: 'linear-gradient(135deg, #f8f9ff 0%, #fff 100%)' }}>
+                            <h3 className="card-title" style={{ color: 'var(--primary)' }}>📋 商品属性 (Product Attributes)</h3>
+                            <p style={{ fontSize: '0.85em', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                                ※ 固定値は自動設定されます。選択式の属性を入力してください。
+                            </p>
 
+                            {/* 固定値の表示 */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px', padding: '12px', background: '#f0f0f0', borderRadius: '8px' }}>
+                                <div>
+                                    <span style={{ fontWeight: 600 }}>🔒 {PRODUCT_ATTRIBUTES.adult.label_ja}</span>
+                                    <span style={{ marginLeft: '8px', color: 'green' }}>✓ {PRODUCT_ATTRIBUTES.adult.fixed_label}</span>
+                                </div>
+                                <div>
+                                    <span style={{ fontWeight: 600 }}>🔒 {PRODUCT_ATTRIBUTES.warranty.label_ja}</span>
+                                    <span style={{ marginLeft: '8px', color: 'green' }}>✓ {PRODUCT_ATTRIBUTES.warranty.fixed_label}</span>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                                {/* Material - 素材 */}
                                 <div className="form-group">
-                                    <label className="form-label">Character (Manual or Select)</label>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <input type="text" className="form-input" placeholder="例: 孫悟空" value={characterInput} onChange={(e) => setCharacterInput(e.target.value)} />
-                                            <button type="button" className="btn btn-secondary" onClick={() => handleTranslate('character')} disabled={translating.character}>翻訳</button>
-                                        </div>
-                                        {specs.character.text && <div style={{ color: 'green', fontSize: '0.9em' }}>Translated: {specs.character.text}</div>}
+                                    <label className="form-label">
+                                        {PRODUCT_ATTRIBUTES.material.label_ja} / {PRODUCT_ATTRIBUTES.material.label_zh}
+                                    </label>
+                                    <select
+                                        className="form-input form-select"
+                                        value={productAttrs.material.value_id}
+                                        onChange={(e) => updateProductAttr('material', 'value_id', parseInt(e.target.value))}
+                                        style={{ background: productAttrs.material.value_id ? '#e6fffa' : '#fff' }}
+                                    >
+                                        <option value="">-- 選択 --</option>
+                                        {PRODUCT_ATTRIBUTES.material.options.map(opt => (
+                                            <option key={opt.value_id} value={opt.value_id}>
+                                                {opt.label_zh} ({opt.label_ja})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
 
-                                        {specs.character.attrId && (
-                                            <select className="form-input form-select" value={specs.character.valueId} onChange={(e) => handleSpecChange('character', e.target.value)} style={{ background: specs.character.valueId ? '#e6fffa' : '#fff' }}>
-                                                <option value="">(Select from list if matched)</option>
-                                                {specs.character.options.map(opt => <option key={opt.value_id} value={opt.value_id}>{opt.display_value_name}</option>)}
-                                            </select>
-                                        )}
+                                {/* Goods Type - 商品タイプ */}
+                                <div className="form-group">
+                                    <label className="form-label">
+                                        {PRODUCT_ATTRIBUTES.goodsType.label_ja} / {PRODUCT_ATTRIBUTES.goodsType.label_zh}
+                                    </label>
+                                    <select
+                                        className="form-input form-select"
+                                        value={productAttrs.goodsType.text}
+                                        onChange={(e) => updateProductAttr('goodsType', 'text', e.target.value)}
+                                        style={{ background: productAttrs.goodsType.text ? '#e6fffa' : '#fff' }}
+                                    >
+                                        <option value="">-- 選択 --</option>
+                                        {PRODUCT_ATTRIBUTES.goodsType.preset_options.map(opt => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.value} ({opt.label_ja})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Style - スタイル */}
+                                <div className="form-group">
+                                    <label className="form-label">
+                                        {PRODUCT_ATTRIBUTES.style.label_ja} / {PRODUCT_ATTRIBUTES.style.label_zh}
+                                    </label>
+                                    <select
+                                        className="form-input form-select"
+                                        value={productAttrs.style.text}
+                                        onChange={(e) => updateProductAttr('style', 'text', e.target.value)}
+                                        style={{ background: productAttrs.style.text ? '#e6fffa' : '#fff' }}
+                                    >
+                                        <option value="">-- 選択 --</option>
+                                        {PRODUCT_ATTRIBUTES.style.preset_options.map(opt => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.value} ({opt.label_ja})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Material Feature - 素材特性 */}
+                                <div className="form-group">
+                                    <label className="form-label">
+                                        {PRODUCT_ATTRIBUTES.materialFeature.label_ja} / {PRODUCT_ATTRIBUTES.materialFeature.label_zh}
+                                    </label>
+                                    <select
+                                        className="form-input form-select"
+                                        value={productAttrs.materialFeature.text}
+                                        onChange={(e) => updateProductAttr('materialFeature', 'text', e.target.value)}
+                                        style={{ background: productAttrs.materialFeature.text ? '#e6fffa' : '#fff' }}
+                                    >
+                                        <option value="">-- 選択 --</option>
+                                        {PRODUCT_ATTRIBUTES.materialFeature.preset_options.map(opt => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.value} ({opt.label_ja})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Quantity - 数量 */}
+                                <div className="form-group">
+                                    <label className="form-label">
+                                        {PRODUCT_ATTRIBUTES.quantity.label_ja} / {PRODUCT_ATTRIBUTES.quantity.label_zh}
+                                    </label>
+                                    <select
+                                        className="form-input form-select"
+                                        value={productAttrs.quantity.text}
+                                        onChange={(e) => updateProductAttr('quantity', 'text', e.target.value)}
+                                        style={{ background: productAttrs.quantity.text ? '#e6fffa' : '#fff' }}
+                                    >
+                                        <option value="">-- 選択 --</option>
+                                        {PRODUCT_ATTRIBUTES.quantity.preset_options.map(opt => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.value} ({opt.label_ja})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Character - キャラクター（自由入力付き）*/}
+                                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                                    <label className="form-label">
+                                        {PRODUCT_ATTRIBUTES.character.label_ja} / {PRODUCT_ATTRIBUTES.character.label_zh}
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <select
+                                            className="form-input form-select"
+                                            style={{ flex: '1', minWidth: '200px', background: productAttrs.character.text ? '#e6fffa' : '#fff' }}
+                                            value={productAttrs.character.text}
+                                            onChange={(e) => updateProductAttr('character', 'text', e.target.value)}
+                                        >
+                                            <option value="">-- よく使うキャラ --</option>
+                                            {PRODUCT_ATTRIBUTES.character.preset_options.map(opt => (
+                                                <option key={opt.value} value={opt.value}>
+                                                    {opt.value} ({opt.label_ja})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            style={{ flex: '1', minWidth: '200px' }}
+                                            placeholder="または直接入力（中国語）..."
+                                            value={productAttrs.character.text}
+                                            onChange={(e) => updateProductAttr('character', 'text', e.target.value)}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            onClick={() => handleTranslate('character')}
+                                            disabled={translating.character || !characterInput}
+                                            style={{ whiteSpace: 'nowrap' }}
+                                        >
+                                            ✨ 翻訳
+                                        </button>
+                                    </div>
+                                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            style={{ flex: '1' }}
+                                            placeholder="日本語で入力して翻訳..."
+                                            value={characterInput}
+                                            onChange={(e) => setCharacterInput(e.target.value)}
+                                        />
+                                        <span style={{ fontSize: '0.85em', color: 'var(--text-secondary)' }}>→ 翻訳結果が上に反映</span>
                                     </div>
                                 </div>
                             </div>
