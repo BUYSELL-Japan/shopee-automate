@@ -335,6 +335,50 @@ function NewProduct() {
         }));
     }
 
+    // Shopee画像仕様に合わせて最適化
+    const optimizeImageForShopee = async (file) => {
+        return new Promise((resolve) => {
+            const img = new Image()
+            img.onload = () => {
+                const canvas = document.createElement('canvas')
+                const ctx = canvas.getContext('2d')
+
+                // Shopee要件: 最小500x500、最大2000x2000
+                let width = img.width
+                let height = img.height
+                const maxSize = 2000
+                const minSize = 500
+
+                // リサイズロジック
+                if (width > maxSize || height > maxSize) {
+                    const ratio = Math.min(maxSize / width, maxSize / height)
+                    width = Math.round(width * ratio)
+                    height = Math.round(height * ratio)
+                }
+                if (width < minSize || height < minSize) {
+                    const ratio = Math.max(minSize / width, minSize / height)
+                    width = Math.round(width * ratio)
+                    height = Math.round(height * ratio)
+                }
+
+                canvas.width = width
+                canvas.height = height
+                ctx.drawImage(img, 0, 0, width, height)
+
+                // JPEGに変換（Shopeeが最も対応しやすい）
+                canvas.toBlob((blob) => {
+                    const optimizedFile = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), {
+                        type: 'image/jpeg'
+                    })
+                    console.log(`Optimized: ${file.name} (${file.size} bytes) -> ${optimizedFile.name} (${optimizedFile.size} bytes)`)
+                    resolve(optimizedFile)
+                }, 'image/jpeg', 0.85)
+            }
+            img.onerror = () => resolve(file) // エラー時は元ファイルを使用
+            img.src = URL.createObjectURL(file)
+        })
+    }
+
     const handleImageUpload = async (e) => {
         const files = Array.from(e.target.files)
         if (files.length === 0) return
@@ -356,7 +400,9 @@ function NewProduct() {
             for (let i = 0; i < newImages.length; i++) {
                 const img = newImages[i]
                 try {
-                    const result = await uploadImage(accessToken, shopId, img.file)
+                    // 画像を最適化
+                    const optimizedFile = await optimizeImageForShopee(img.file)
+                    const result = await uploadImage(accessToken, shopId, optimizedFile)
                     console.log('Upload result:', result)
                     if (result.response && result.response.image_info) {
                         const uploadedImage = {
