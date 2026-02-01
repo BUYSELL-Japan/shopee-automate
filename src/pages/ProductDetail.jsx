@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { formatPrice, getStatusBadge } from '../services/shopeeApi'
+import { formatPrice, getStatusBadge, getItemDetail } from '../services/shopeeApi'
 
 function ProductDetail() {
     const { id } = useParams()
@@ -9,6 +9,7 @@ function ProductDetail() {
     const { accessToken, shopId, isConnected } = useShopeeAuth()
 
     const [product, setProduct] = useState(null)
+    const [rawApiResponse, setRawApiResponse] = useState(null) // 生APIレスポンス
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState(null)
 
@@ -23,20 +24,74 @@ function ProductDetail() {
             setError(null)
 
             try {
-                // Shopee APIから商品詳細を取得
-                const response = await fetch(
-                    `/api/shopee/products?access_token=${accessToken}&shop_id=${shopId}&item_id=${id}`
-                )
-                const result = await response.json()
+                // Shopee item_detail APIから詳細を取得
+                console.log('=== Fetching Product Detail ===')
+                console.log('Item ID:', id)
+                console.log('Shop ID:', shopId)
 
-                if (result.status === 'success' && result.data?.products?.length > 0) {
-                    setProduct(result.data.products[0])
-                } else if (result.status === 'success' && result.data?.product) {
-                    setProduct(result.data.product)
+                const result = await getItemDetail(accessToken, shopId, id)
+
+                // 完全なAPIレスポンスをコンソールに出力
+                console.log('=== FULL API RESPONSE ===')
+                console.log(JSON.stringify(result, null, 2))
+                console.log('=========================')
+
+                setRawApiResponse(result)
+
+                if (result.response && result.response.item_list && result.response.item_list.length > 0) {
+                    const item = result.response.item_list[0]
+
+                    // 属性情報をログ出力
+                    console.log('=== ATTRIBUTE LIST ===')
+                    console.log(JSON.stringify(item.attribute_list, null, 2))
+                    console.log('======================')
+
+                    // ブランド情報をログ出力
+                    console.log('=== BRAND INFO ===')
+                    console.log('Brand ID:', item.brand?.brand_id)
+                    console.log('Brand Name:', item.brand?.original_brand_name)
+                    console.log('==================')
+
+                    // カテゴリ情報をログ出力
+                    console.log('=== CATEGORY INFO ===')
+                    console.log('Category ID:', item.category_id)
+                    console.log('=====================')
+
+                    setProduct({
+                        id: item.item_id,
+                        name: item.item_name,
+                        description: item.description,
+                        price: item.price_info?.[0]?.current_price || item.price_info?.[0]?.original_price,
+                        originalPrice: item.price_info?.[0]?.original_price,
+                        currency: item.price_info?.[0]?.currency || 'TWD',
+                        stock: item.stock_info_v2?.summary_info?.total_available_stock || item.stock_info?.[0]?.current_stock,
+                        status: mapApiStatus(item.item_status),
+                        image: item.image?.image_url_list?.[0],
+                        images: item.image?.image_url_list || [],
+                        sold: item.sold || 0,
+                        views: item.views || 0,
+                        likes: item.likes || 0,
+                        rating_star: item.rating_star,
+                        create_time: item.create_time,
+                        update_time: item.update_time,
+                        category_id: item.category_id,
+                        item_sku: item.item_sku,
+                        // 追加情報
+                        brand: item.brand,
+                        attribute_list: item.attribute_list,
+                        logistic_info: item.logistic_info,
+                        weight: item.weight,
+                        dimension: item.dimension,
+                        condition: item.condition
+                    })
                 } else {
-                    // D1から取得を試みる
+                    // フォールバック: D1から取得
                     const dbResponse = await fetch(`/api/db/products?item_id=${id}&shop_id=${shopId}`)
                     const dbResult = await dbResponse.json()
+                    console.log('=== D1 RESPONSE ===')
+                    console.log(JSON.stringify(dbResult, null, 2))
+                    console.log('===================')
+
                     if (dbResult.status === 'success' && dbResult.data?.products?.length > 0) {
                         const p = dbResult.data.products[0]
                         setProduct({
@@ -64,6 +119,7 @@ function ProductDetail() {
                     }
                 }
             } catch (e) {
+                console.error('Fetch error:', e)
                 setError(e.message || 'エラーが発生しました')
             } finally {
                 setIsLoading(false)
@@ -72,6 +128,17 @@ function ProductDetail() {
 
         fetchProductDetail()
     }, [isConnected, accessToken, shopId, id])
+
+    // APIステータスマッピング
+    function mapApiStatus(status) {
+        const statusMap = {
+            'NORMAL': 'active',
+            'BANNED': 'banned',
+            'DELETED': 'deleted',
+            'UNLIST': 'inactive'
+        }
+        return statusMap[status] || 'active'
+    }
 
     // D1ステータスマッピング
     function mapDbStatus(status) {
