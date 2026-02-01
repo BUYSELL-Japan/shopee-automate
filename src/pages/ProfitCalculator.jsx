@@ -1,14 +1,23 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
-import { getOrders, formatPrice, formatPriceWithJPY, twdToJpy, jpyToTwd } from '../services/shopeeApi'
+import { getOrders, twdToJpy, jpyToTwd } from '../services/shopeeApi'
 
-// デフォルトの費用設定
-const DEFAULT_COSTS = {
-    commissionRate: 0.1631, // 手数料16.31% (実際のShopee手数料率)
-    yamatoShipping: 1350, // ヤマト送料（JPY）
-    slsShipping: 76,      // SLS送料（TWD）実質コスト
+// NewProductと同じ費用定数（実際の取引データに基づく）
+const COSTS = {
+    // Shopee手数料率（実際の取引データより）
+    COMMISSION_RATE: 0.1077,      // 手数料 10.77%
+    SERVICE_FEE_RATE: 0.03,       // 服務費 3%
+    TRANSACTION_FEE_RATE: 0.0254, // 金流服務費 2.54%
+    // 送料
+    YAMATO_JPY: 1350,             // ヤマト送料（JPY）
+    SLS_NET_TWD: 76,              // SLS実質送料（TWD）
+    // 為替レート
+    TWD_JPY_RATE: 4.7
 }
+
+// 合計手数料率
+const TOTAL_FEE_RATE = COSTS.COMMISSION_RATE + COSTS.SERVICE_FEE_RATE + COSTS.TRANSACTION_FEE_RATE
 
 function ProfitCalculator() {
     const [orders, setOrders] = useState([])
@@ -16,16 +25,14 @@ function ProfitCalculator() {
     const [isSaving, setIsSaving] = useState(false)
     const [error, setError] = useState(null)
     const [saveMessage, setSaveMessage] = useState(null)
-    const [costSettings, setCostSettings] = useState(DEFAULT_COSTS)
     const [orderCosts, setOrderCosts] = useState({}) // 注文ごとの費用編集
-    const [savedCosts, setSavedCosts] = useState({}) // D1から読み込んだデータ
-    const [statusFilter, setStatusFilter] = useState('all') // ステータスフィルタ
+    const [statusFilter, setStatusFilter] = useState('all')
 
     const { accessToken, shopId, isConnected } = useShopeeAuth()
 
     // D1から保存済み費用を読み込む
     const loadSavedCosts = useCallback(async () => {
-        if (!shopId) return
+        if (!shopId) return {}
         try {
             const response = await fetch(`/api/db/order-costs?shop_id=${shopId}`)
             const result = await response.json()
@@ -33,24 +40,24 @@ function ProfitCalculator() {
                 const costsMap = {}
                 result.data.forEach(item => {
                     costsMap[item.order_id] = {
-                        commission: item.commission_twd,
-                        yamatoShipping: item.yamato_shipping,
-                        slsShipping: item.sls_shipping,
-                        productCost: item.product_cost,
-                        otherCost: item.other_cost,
-                        salesTwd: item.sales_twd,
-                        notes: item.notes
+                        commissionTwd: item.commission_twd,
+                        yamatoJpy: item.yamato_shipping,
+                        slsTwd: item.sls_shipping,
+                        productCostJpy: item.product_cost,
+                        otherCostJpy: item.other_cost,
+                        notes: item.notes,
+                        saved: true
                     }
                 })
-                setSavedCosts(costsMap)
-                setOrderCosts(prev => ({ ...costsMap, ...prev }))
+                return costsMap
             }
         } catch (e) {
             console.error('Failed to load saved costs:', e)
         }
+        return {}
     }, [shopId])
 
-    // 注文一覧を取得（全注文）
+    // 注文一覧を取得
     const fetchOrders = async () => {
         if (!isConnected || !accessToken || !shopId) return
 
@@ -58,29 +65,36 @@ function ProfitCalculator() {
         setError(null)
 
         try {
-            // 全注文を取得（ステータス指定なし）
-            const result = await getOrders(accessToken, shopId, {
-                pageSize: 100
-            })
+            // まず保存済みデータを読み込む
+            const savedData = await loadSavedCosts()
+
+            const result = await getOrders(accessToken, shopId, { pageSize: 100 })
 
             if (result.status === 'success') {
                 const allOrders = result.data.orders || []
                 setOrders(allOrders)
 
-                // 初期費用を設定（保存済みデータがあればそれを使う）
+                // 各注文の初期費用を設定（保存済みデータがあれば使用）
                 const initialCosts = {}
                 allOrders.forEach(order => {
-                    if (!savedCosts[order.id]) {
+                    const salesTwd = order.total || 0
+                    if (savedData[order.id]) {
+                        initialCosts[order.id] = savedData[order.id]
+                    } else {
+                        // NewProductと同じロジックで計算
                         initialCosts[order.id] = {
-                            commission: Math.round(order.total * costSettings.commissionRate),
-                            yamatoShipping: costSettings.yamatoShipping,
-                            slsShipping: costSettings.slsShipping,
-                            otherCost: 0,
-                            productCost: 0
+                            commissionTwd: Math.round(salesTwd * COSTS.COMMISSION_RATE),
+                            serviceTwd: Math.round(salesTwd * COSTS.SERVICE_FEE_RATE),
+                            transactionTwd: Math.round(salesTwd * COSTS.TRANSACTION_FEE_RATE),
+                            yamatoJpy: COSTS.YAMATO_JPY,
+                            slsTwd: COSTS.SLS_NET_TWD,
+                            productCostJpy: 0,
+                            otherCostJpy: 0,
+                            saved: false
                         }
                     }
                 })
-                setOrderCosts(prev => ({ ...prev, ...initialCosts }))
+                setOrderCosts(initialCosts)
             } else {
                 setError(result.message || '注文の取得に失敗しました')
             }
@@ -92,16 +106,10 @@ function ProfitCalculator() {
     }
 
     useEffect(() => {
-        if (isConnected && shopId) {
-            loadSavedCosts()
-        }
-    }, [isConnected, shopId, loadSavedCosts])
-
-    useEffect(() => {
-        if (isConnected && Object.keys(savedCosts).length >= 0) {
+        if (isConnected) {
             fetchOrders()
         }
-    }, [isConnected, accessToken, shopId, savedCosts])
+    }, [isConnected, accessToken, shopId, loadSavedCosts])
 
     // 費用を更新
     const updateOrderCost = (orderId, field, value) => {
@@ -109,65 +117,80 @@ function ProfitCalculator() {
             ...prev,
             [orderId]: {
                 ...prev[orderId],
-                [field]: parseFloat(value) || 0
+                [field]: parseFloat(value) || 0,
+                saved: false // 変更されたことを記録
             }
         }))
     }
 
     // 単一注文を保存
     const saveOrderCost = async (orderId) => {
-        if (!shopId) return
+        if (!shopId) return false
         const costs = orderCosts[orderId]
-        if (!costs) return
+        if (!costs) return false
 
         const order = orders.find(o => o.id === orderId)
+        const salesTwd = order?.total || 0
 
+        setIsSaving(true)
         try {
             const response = await fetch(`/api/db/order-costs?shop_id=${shopId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     orderCost: {
-                        order_id: orderId,
-                        order_sn: order?.order_sn,
-                        commission_twd: costs.commission || 0,
-                        yamato_shipping: costs.yamatoShipping || 0,
-                        sls_shipping: costs.slsShipping || 0,
-                        product_cost: costs.productCost || 0,
-                        other_cost: costs.otherCost || 0,
-                        sales_twd: order?.total || 0
+                        order_id: String(orderId),
+                        order_sn: order?.order_sn || '',
+                        commission_twd: costs.commissionTwd || Math.round(salesTwd * TOTAL_FEE_RATE),
+                        yamato_shipping: costs.yamatoJpy || COSTS.YAMATO_JPY,
+                        sls_shipping: costs.slsTwd || COSTS.SLS_NET_TWD,
+                        product_cost: costs.productCostJpy || 0,
+                        other_cost: costs.otherCostJpy || 0,
+                        sales_twd: salesTwd
                     }
                 })
             })
             const result = await response.json()
             if (result.status === 'success') {
-                setSavedCosts(prev => ({ ...prev, [orderId]: costs }))
+                setOrderCosts(prev => ({
+                    ...prev,
+                    [orderId]: { ...prev[orderId], saved: true }
+                }))
+                setSaveMessage({ type: 'success', text: '保存しました' })
+                setTimeout(() => setSaveMessage(null), 2000)
                 return true
+            } else {
+                setSaveMessage({ type: 'error', text: result.message || '保存失敗' })
+                setTimeout(() => setSaveMessage(null), 3000)
             }
         } catch (e) {
-            console.error('Save error:', e)
+            setSaveMessage({ type: 'error', text: e.message })
+            setTimeout(() => setSaveMessage(null), 3000)
+        } finally {
+            setIsSaving(false)
         }
         return false
     }
 
-    // すべての費用を一括保存
+    // すべて保存
     const saveAllOrderCosts = async () => {
-        if (!shopId) return
+        if (!shopId || orders.length === 0) return
         setIsSaving(true)
         setSaveMessage(null)
 
         try {
             const orderCostsArray = orders.map(order => {
                 const costs = orderCosts[order.id] || {}
+                const salesTwd = order.total || 0
                 return {
-                    order_id: order.id,
-                    order_sn: order.order_sn,
-                    commission_twd: costs.commission || Math.round(order.total * costSettings.commissionRate),
-                    yamato_shipping: costs.yamatoShipping || costSettings.yamatoShipping,
-                    sls_shipping: costs.slsShipping || costSettings.slsShipping,
-                    product_cost: costs.productCost || 0,
-                    other_cost: costs.otherCost || 0,
-                    sales_twd: order.total || 0
+                    order_id: String(order.id),
+                    order_sn: order.order_sn || '',
+                    commission_twd: costs.commissionTwd || Math.round(salesTwd * TOTAL_FEE_RATE),
+                    yamato_shipping: costs.yamatoJpy || COSTS.YAMATO_JPY,
+                    sls_shipping: costs.slsTwd || COSTS.SLS_NET_TWD,
+                    product_cost: costs.productCostJpy || 0,
+                    other_cost: costs.otherCostJpy || 0,
+                    sales_twd: salesTwd
                 }
             })
 
@@ -179,8 +202,15 @@ function ProfitCalculator() {
             const result = await response.json()
 
             if (result.status === 'success') {
-                setSaveMessage({ type: 'success', text: `${orders.length}件の費用データを保存しました` })
-                await loadSavedCosts()
+                // 全てsavedに更新
+                setOrderCosts(prev => {
+                    const updated = { ...prev }
+                    Object.keys(updated).forEach(id => {
+                        updated[id] = { ...updated[id], saved: true }
+                    })
+                    return updated
+                })
+                setSaveMessage({ type: 'success', text: `${orders.length}件を保存しました` })
             } else {
                 setSaveMessage({ type: 'error', text: result.message })
             }
@@ -192,42 +222,50 @@ function ProfitCalculator() {
         }
     }
 
-    // 利益計算
+    // 利益計算（NewProductと同じロジック）
     const calculateProfit = (order) => {
         const costs = orderCosts[order.id] || {}
-        const salesTWD = order.total || 0
-        const salesJPY = twdToJpy(salesTWD)
+        const salesTwd = order.total || 0
+        const salesJpy = Math.round(salesTwd * COSTS.TWD_JPY_RATE)
 
-        // 費用（手数料はTWDベース、送料はJPYベース）
-        const commissionTWD = costs.commission || Math.round(salesTWD * costSettings.commissionRate)
-        const commissionJPY = twdToJpy(commissionTWD)
+        // 手数料（TWD）- NewProductと同じ計算
+        const commissionTwd = costs.commissionTwd ?? Math.round(salesTwd * COSTS.COMMISSION_RATE)
+        const serviceTwd = costs.serviceTwd ?? Math.round(salesTwd * COSTS.SERVICE_FEE_RATE)
+        const transactionTwd = costs.transactionTwd ?? Math.round(salesTwd * COSTS.TRANSACTION_FEE_RATE)
+        const totalFeesTwd = commissionTwd + serviceTwd + transactionTwd
 
-        const yamatoJPY = costs.yamatoShipping || costSettings.yamatoShipping
-        const slsTWD = costs.slsShipping || costSettings.slsShipping
-        const slsJPY = twdToJpy(slsTWD)
+        // 送料
+        const yamatoJpy = costs.yamatoJpy ?? COSTS.YAMATO_JPY
+        const slsTwd = costs.slsTwd ?? COSTS.SLS_NET_TWD
 
-        const otherCostJPY = costs.otherCost || 0
-        const productCostJPY = costs.productCost || 0
+        // 原価・その他
+        const productCostJpy = costs.productCostJpy ?? 0
+        const otherCostJpy = costs.otherCostJpy ?? 0
 
-        // 総コスト（JPY）
-        const totalCostJPY = commissionJPY + yamatoJPY + slsJPY + otherCostJPY + productCostJPY
+        // 総コスト計算（円換算）
+        const feesTotalJpy = Math.round(totalFeesTwd * COSTS.TWD_JPY_RATE)
+        const slsJpy = Math.round(slsTwd * COSTS.TWD_JPY_RATE)
+        const totalCostJpy = feesTotalJpy + yamatoJpy + slsJpy + productCostJpy + otherCostJpy
 
-        // 利益（JPY）
-        const profitJPY = salesJPY - totalCostJPY
+        // 利益
+        const profitJpy = salesJpy - totalCostJpy
+        const profitTwd = Math.round(profitJpy / COSTS.TWD_JPY_RATE)
 
         return {
-            salesTWD,
-            salesJPY,
-            commissionTWD,
-            commissionJPY,
-            yamatoJPY,
-            slsTWD,
-            slsJPY,
-            otherCostJPY,
-            productCostJPY,
-            totalCostJPY,
-            profitJPY,
-            profitTWD: jpyToTwd(profitJPY)
+            salesTwd,
+            salesJpy,
+            commissionTwd,
+            serviceTwd,
+            transactionTwd,
+            totalFeesTwd,
+            yamatoJpy,
+            slsTwd,
+            slsJpy,
+            productCostJpy,
+            otherCostJpy,
+            totalCostJpy,
+            profitJpy,
+            profitTwd
         }
     }
 
@@ -239,24 +277,24 @@ function ProfitCalculator() {
 
     // 合計計算
     const calculateTotals = () => {
-        let totalSalesJPY = 0
-        let totalCostsJPY = 0
-        let totalProfitJPY = 0
+        let totalSalesJpy = 0
+        let totalCostsJpy = 0
+        let totalProfitJpy = 0
 
         filteredOrders.forEach(order => {
             const profit = calculateProfit(order)
-            totalSalesJPY += profit.salesJPY
-            totalCostsJPY += profit.totalCostJPY
-            totalProfitJPY += profit.profitJPY
+            totalSalesJpy += profit.salesJpy
+            totalCostsJpy += profit.totalCostJpy
+            totalProfitJpy += profit.profitJpy
         })
 
         return {
-            totalSalesJPY,
-            totalSalesTWD: jpyToTwd(totalSalesJPY),
-            totalCostsJPY,
-            totalCostsTWD: jpyToTwd(totalCostsJPY),
-            totalProfitJPY,
-            totalProfitTWD: jpyToTwd(totalProfitJPY),
+            totalSalesJPY: totalSalesJpy,
+            totalSalesTWD: Math.round(totalSalesJpy / COSTS.TWD_JPY_RATE),
+            totalCostsJPY: totalCostsJpy,
+            totalCostsTWD: Math.round(totalCostsJpy / COSTS.TWD_JPY_RATE),
+            totalProfitJPY: totalProfitJpy,
+            totalProfitTWD: Math.round(totalProfitJpy / COSTS.TWD_JPY_RATE),
             orderCount: filteredOrders.length
         }
     }
@@ -467,21 +505,23 @@ function ProfitCalculator() {
                                     <th>ステータス</th>
                                     <th>商品</th>
                                     <th>売上</th>
-                                    <th>手数料9%</th>
+                                    <th>手数料(16.3%)</th>
                                     <th>ヤマト送料</th>
                                     <th>SLS送料</th>
                                     <th>商品原価</th>
                                     <th>その他</th>
                                     <th>利益</th>
+                                    <th>保存</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredOrders.map(order => {
                                     const profit = calculateProfit(order)
                                     const costs = orderCosts[order.id] || {}
+                                    const isSaved = costs.saved === true
 
                                     return (
-                                        <tr key={order.id}>
+                                        <tr key={order.id} style={{ background: isSaved ? 'transparent' : 'rgba(234, 179, 8, 0.05)' }}>
                                             <td style={{ fontWeight: 600 }}>{order.id}</td>
                                             <td>
                                                 <span className={`badge ${order.status === 'COMPLETED' || order.order_status === 'COMPLETED' ? 'badge-success' : 'badge-warning'}`}>
@@ -501,9 +541,17 @@ function ProfitCalculator() {
                                                 )}
                                             </td>
                                             <td>
-                                                <div style={{ fontWeight: 600 }}>¥{profit.salesJPY.toLocaleString()}</div>
+                                                <div style={{ fontWeight: 600 }}>¥{profit.salesJpy.toLocaleString()}</div>
                                                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                                                    NT${profit.salesTWD.toLocaleString()}
+                                                    NT${profit.salesTwd.toLocaleString()}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-error)' }}>
+                                                    -NT${profit.totalFeesTwd.toLocaleString()}
+                                                </div>
+                                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                                                    ({(TOTAL_FEE_RATE * 100).toFixed(1)}%)
                                                 </div>
                                             </td>
                                             <td>
@@ -511,8 +559,18 @@ function ProfitCalculator() {
                                                     type="number"
                                                     className="form-input"
                                                     style={{ width: 80, padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
-                                                    value={costs.commission ?? profit.commissionTWD}
-                                                    onChange={(e) => updateOrderCost(order.id, 'commission', e.target.value)}
+                                                    value={costs.yamatoJpy ?? COSTS.YAMATO_JPY}
+                                                    onChange={(e) => updateOrderCost(order.id, 'yamatoJpy', e.target.value)}
+                                                />
+                                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>¥</div>
+                                            </td>
+                                            <td>
+                                                <input
+                                                    type="number"
+                                                    className="form-input"
+                                                    style={{ width: 70, padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
+                                                    value={costs.slsTwd ?? COSTS.SLS_NET_TWD}
+                                                    onChange={(e) => updateOrderCost(order.id, 'slsTwd', e.target.value)}
                                                 />
                                                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>NT$</div>
                                             </td>
@@ -521,8 +579,8 @@ function ProfitCalculator() {
                                                     type="number"
                                                     className="form-input"
                                                     style={{ width: 80, padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
-                                                    value={costs.yamatoShipping ?? costSettings.yamatoShipping}
-                                                    onChange={(e) => updateOrderCost(order.id, 'yamatoShipping', e.target.value)}
+                                                    value={costs.productCostJpy ?? 0}
+                                                    onChange={(e) => updateOrderCost(order.id, 'productCostJpy', e.target.value)}
                                                 />
                                                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>¥</div>
                                             </td>
@@ -530,29 +588,9 @@ function ProfitCalculator() {
                                                 <input
                                                     type="number"
                                                     className="form-input"
-                                                    style={{ width: 80, padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
-                                                    value={costs.slsShipping ?? costSettings.slsShipping}
-                                                    onChange={(e) => updateOrderCost(order.id, 'slsShipping', e.target.value)}
-                                                />
-                                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>NT$</div>
-                                            </td>
-                                            <td>
-                                                <input
-                                                    type="number"
-                                                    className="form-input"
-                                                    style={{ width: 80, padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
-                                                    value={costs.productCost ?? 0}
-                                                    onChange={(e) => updateOrderCost(order.id, 'productCost', e.target.value)}
-                                                />
-                                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>¥</div>
-                                            </td>
-                                            <td>
-                                                <input
-                                                    type="number"
-                                                    className="form-input"
-                                                    style={{ width: 80, padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
-                                                    value={costs.otherCost ?? 0}
-                                                    onChange={(e) => updateOrderCost(order.id, 'otherCost', e.target.value)}
+                                                    style={{ width: 70, padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
+                                                    value={costs.otherCostJpy ?? 0}
+                                                    onChange={(e) => updateOrderCost(order.id, 'otherCostJpy', e.target.value)}
                                                 />
                                                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>¥</div>
                                             </td>
@@ -560,13 +598,23 @@ function ProfitCalculator() {
                                                 <div style={{
                                                     fontWeight: 700,
                                                     fontSize: 'var(--font-size-lg)',
-                                                    color: profit.profitJPY >= 0 ? 'var(--color-success)' : 'var(--color-error)'
+                                                    color: profit.profitJpy >= 0 ? 'var(--color-success)' : 'var(--color-error)'
                                                 }}>
-                                                    ¥{profit.profitJPY.toLocaleString()}
+                                                    ¥{profit.profitJpy.toLocaleString()}
                                                 </div>
                                                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                                                    NT${profit.profitTWD.toLocaleString()}
+                                                    NT${profit.profitTwd.toLocaleString()}
                                                 </div>
+                                            </td>
+                                            <td>
+                                                <button
+                                                    className={`btn btn-sm ${isSaved ? 'btn-secondary' : 'btn-primary'}`}
+                                                    onClick={() => saveOrderCost(order.id)}
+                                                    disabled={isSaving}
+                                                    style={{ padding: '4px 8px', fontSize: 'var(--font-size-xs)' }}
+                                                >
+                                                    {isSaved ? '✓' : '💾'}
+                                                </button>
                                             </td>
                                         </tr>
                                     )
