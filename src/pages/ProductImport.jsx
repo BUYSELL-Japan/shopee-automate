@@ -46,23 +46,78 @@ function ProductImport() {
 
     const { shopId, isConnected } = useShopeeAuth()
 
-    // CSVパース
+    // CSVパース（クォート対応版）
     const parseCSV = (text) => {
-        const lines = text.trim().split('\n')
+        // BOMを除去
+        let content = text.replace(/^\uFEFF/, '').trim()
+
+        // 行に分割（改行がクォート内にある場合も考慮）
+        const parseCSVLine = (line) => {
+            const result = []
+            let current = ''
+            let inQuotes = false
+
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i]
+
+                if (char === '"') {
+                    if (inQuotes && line[i + 1] === '"') {
+                        // エスケープされたクォート
+                        current += '"'
+                        i++
+                    } else {
+                        inQuotes = !inQuotes
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim())
+                    current = ''
+                } else {
+                    current += char
+                }
+            }
+            result.push(current.trim())
+            return result
+        }
+
+        const lines = content.split(/\r?\n/).filter(line => line.trim())
         if (lines.length < 2) return []
 
-        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
-        const data = []
+        const headers = parseCSVLine(lines[0])
+        console.log('CSV Headers:', headers)
 
+        const data = []
         for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''))
+            const values = parseCSVLine(lines[i])
             const row = {}
             headers.forEach((header, idx) => {
-                row[header] = values[idx] || ''
+                // ヘッダー名を正規化（全角/半角スペース、前後の空白を統一）
+                const normalizedHeader = header.replace(/[\s　]+/g, ' ').trim()
+                row[normalizedHeader] = values[idx] || ''
             })
             data.push(row)
         }
+
+        console.log('Parsed data sample:', data[0])
         return data
+    }
+
+    // ヘッダー名を柔軟にマッチング
+    const findColumn = (row, ...possibleNames) => {
+        for (const name of possibleNames) {
+            // 完全一致
+            if (row[name] !== undefined) return row[name]
+            // 正規化して比較
+            const normalizedName = name.replace(/[\s　]+/g, ' ').trim()
+            for (const key of Object.keys(row)) {
+                const normalizedKey = key.replace(/[\s　]+/g, ' ').trim()
+                if (normalizedKey === normalizedName) return row[key]
+                // 部分一致も試す
+                if (normalizedKey.includes(normalizedName) || normalizedName.includes(normalizedKey)) {
+                    return row[key]
+                }
+            }
+        }
+        return ''
     }
 
     // ファイル読み込み
@@ -82,19 +137,21 @@ function ProductImport() {
                 return
             }
 
-            // 必要なカラムを確認
+            // 必要なカラムを確認（柔軟にマッチング）
             const firstRow = parsed[0]
-            const hasParentSKU = 'Parent SKU' in firstRow
-            const hasItemName = '商品名　台湾' in firstRow || '商品名' in firstRow
-            const hasAvgPrice = '平均価格' in firstRow
+            const hasParentSKU = !!findColumn(firstRow, 'Parent SKU', 'ParentSKU', 'SKU', 'sku', 'parent_sku')
+            const hasItemName = !!findColumn(firstRow, '商品名 台湾', '商品名　台湾', '商品名', 'item_name', 'name')
+            const hasAvgPrice = !!findColumn(firstRow, '平均価格', '平均仕入価格', '原価', 'cost', 'price')
+
+            console.log('Column detection:', { hasParentSKU, hasItemName, hasAvgPrice, keys: Object.keys(firstRow) })
 
             if (!hasAvgPrice) {
-                setError('「平均価格」カラムが見つかりません')
+                setError('価格カラムが見つかりません（平均価格、原価、cost等）。検出されたカラム: ' + Object.keys(firstRow).join(', '))
                 return
             }
 
             if (!hasParentSKU && !hasItemName) {
-                setError('「Parent SKU」または「商品名　台湾」カラムが必要です')
+                setError('商品特定用カラムが見つかりません（Parent SKU、商品名等）。検出されたカラム: ' + Object.keys(firstRow).join(', '))
                 return
             }
 
@@ -126,10 +183,13 @@ function ProductImport() {
             const matched = []
 
             csvRows.forEach(row => {
-                const parentSku = row['Parent SKU'] || ''
-                const itemName = row['商品名　台湾'] || row['商品名'] || ''
-                const avgPrice = parseFloat(row['平均価格']) || 0
-                const sourceUrl = row['仕入れ先URL'] || row['URL'] || ''
+                // 柔軟なカラム名マッチング
+                const parentSku = findColumn(row, 'Parent SKU', 'ParentSKU', 'SKU', 'sku', 'parent_sku')
+                const itemName = findColumn(row, '商品名 台湾', '商品名　台湾', '商品名', 'item_name', 'name')
+                const avgPrice = parseFloat(findColumn(row, '平均価格', '平均仕入価格', '原価', 'cost', 'price')) || 0
+                const sourceUrl = findColumn(row, '仕入れ先URL', '仕入先URL', 'URL', 'url', 'source_url')
+
+                console.log('Row data:', { parentSku, itemName, avgPrice, sourceUrl })
 
                 // item_sku または item_name でマッチング
                 let matchedProduct = null
