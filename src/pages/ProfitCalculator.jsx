@@ -1,24 +1,54 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
 import { getOrders, formatPrice, formatPriceWithJPY, twdToJpy, jpyToTwd } from '../services/shopeeApi'
 
 // デフォルトの費用設定
 const DEFAULT_COSTS = {
-    commissionRate: 0.09, // 手数料9%
+    commissionRate: 0.1631, // 手数料16.31% (実際のShopee手数料率)
     yamatoShipping: 1350, // ヤマト送料（JPY）
-    slsShipping: 223,     // SLS送料（TWD）
+    slsShipping: 76,      // SLS送料（TWD）実質コスト
 }
 
 function ProfitCalculator() {
     const [orders, setOrders] = useState([])
     const [isLoading, setIsLoading] = useState(false)
+    const [isSaving, setIsSaving] = useState(false)
     const [error, setError] = useState(null)
+    const [saveMessage, setSaveMessage] = useState(null)
     const [costSettings, setCostSettings] = useState(DEFAULT_COSTS)
     const [orderCosts, setOrderCosts] = useState({}) // 注文ごとの費用編集
+    const [savedCosts, setSavedCosts] = useState({}) // D1から読み込んだデータ
     const [statusFilter, setStatusFilter] = useState('all') // ステータスフィルタ
 
     const { accessToken, shopId, isConnected } = useShopeeAuth()
+
+    // D1から保存済み費用を読み込む
+    const loadSavedCosts = useCallback(async () => {
+        if (!shopId) return
+        try {
+            const response = await fetch(`/api/db/order-costs?shop_id=${shopId}`)
+            const result = await response.json()
+            if (result.status === 'success' && result.data) {
+                const costsMap = {}
+                result.data.forEach(item => {
+                    costsMap[item.order_id] = {
+                        commission: item.commission_twd,
+                        yamatoShipping: item.yamato_shipping,
+                        slsShipping: item.sls_shipping,
+                        productCost: item.product_cost,
+                        otherCost: item.other_cost,
+                        salesTwd: item.sales_twd,
+                        notes: item.notes
+                    }
+                })
+                setSavedCosts(costsMap)
+                setOrderCosts(prev => ({ ...costsMap, ...prev }))
+            }
+        } catch (e) {
+            console.error('Failed to load saved costs:', e)
+        }
+    }, [shopId])
 
     // 注文一覧を取得（全注文）
     const fetchOrders = async () => {
@@ -37,18 +67,20 @@ function ProfitCalculator() {
                 const allOrders = result.data.orders || []
                 setOrders(allOrders)
 
-                // 初期費用を設定
+                // 初期費用を設定（保存済みデータがあればそれを使う）
                 const initialCosts = {}
                 allOrders.forEach(order => {
-                    initialCosts[order.id] = {
-                        commission: Math.round(order.total * costSettings.commissionRate),
-                        yamatoShipping: costSettings.yamatoShipping,
-                        slsShipping: costSettings.slsShipping,
-                        otherCost: 0,
-                        productCost: 0
+                    if (!savedCosts[order.id]) {
+                        initialCosts[order.id] = {
+                            commission: Math.round(order.total * costSettings.commissionRate),
+                            yamatoShipping: costSettings.yamatoShipping,
+                            slsShipping: costSettings.slsShipping,
+                            otherCost: 0,
+                            productCost: 0
+                        }
                     }
                 })
-                setOrderCosts(initialCosts)
+                setOrderCosts(prev => ({ ...prev, ...initialCosts }))
             } else {
                 setError(result.message || '注文の取得に失敗しました')
             }
@@ -60,10 +92,16 @@ function ProfitCalculator() {
     }
 
     useEffect(() => {
-        if (isConnected) {
+        if (isConnected && shopId) {
+            loadSavedCosts()
+        }
+    }, [isConnected, shopId, loadSavedCosts])
+
+    useEffect(() => {
+        if (isConnected && Object.keys(savedCosts).length >= 0) {
             fetchOrders()
         }
-    }, [isConnected, accessToken, shopId])
+    }, [isConnected, accessToken, shopId, savedCosts])
 
     // 費用を更新
     const updateOrderCost = (orderId, field, value) => {
@@ -74,6 +112,84 @@ function ProfitCalculator() {
                 [field]: parseFloat(value) || 0
             }
         }))
+    }
+
+    // 単一注文を保存
+    const saveOrderCost = async (orderId) => {
+        if (!shopId) return
+        const costs = orderCosts[orderId]
+        if (!costs) return
+
+        const order = orders.find(o => o.id === orderId)
+
+        try {
+            const response = await fetch(`/api/db/order-costs?shop_id=${shopId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderCost: {
+                        order_id: orderId,
+                        order_sn: order?.order_sn,
+                        commission_twd: costs.commission || 0,
+                        yamato_shipping: costs.yamatoShipping || 0,
+                        sls_shipping: costs.slsShipping || 0,
+                        product_cost: costs.productCost || 0,
+                        other_cost: costs.otherCost || 0,
+                        sales_twd: order?.total || 0
+                    }
+                })
+            })
+            const result = await response.json()
+            if (result.status === 'success') {
+                setSavedCosts(prev => ({ ...prev, [orderId]: costs }))
+                return true
+            }
+        } catch (e) {
+            console.error('Save error:', e)
+        }
+        return false
+    }
+
+    // すべての費用を一括保存
+    const saveAllOrderCosts = async () => {
+        if (!shopId) return
+        setIsSaving(true)
+        setSaveMessage(null)
+
+        try {
+            const orderCostsArray = orders.map(order => {
+                const costs = orderCosts[order.id] || {}
+                return {
+                    order_id: order.id,
+                    order_sn: order.order_sn,
+                    commission_twd: costs.commission || Math.round(order.total * costSettings.commissionRate),
+                    yamato_shipping: costs.yamatoShipping || costSettings.yamatoShipping,
+                    sls_shipping: costs.slsShipping || costSettings.slsShipping,
+                    product_cost: costs.productCost || 0,
+                    other_cost: costs.otherCost || 0,
+                    sales_twd: order.total || 0
+                }
+            })
+
+            const response = await fetch(`/api/db/order-costs?shop_id=${shopId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderCosts: orderCostsArray })
+            })
+            const result = await response.json()
+
+            if (result.status === 'success') {
+                setSaveMessage({ type: 'success', text: `${orders.length}件の費用データを保存しました` })
+                await loadSavedCosts()
+            } else {
+                setSaveMessage({ type: 'error', text: result.message })
+            }
+        } catch (e) {
+            setSaveMessage({ type: 'error', text: e.message })
+        } finally {
+            setIsSaving(false)
+            setTimeout(() => setSaveMessage(null), 3000)
+        }
     }
 
     // 利益計算
@@ -179,14 +295,37 @@ function ProfitCalculator() {
                         {isLoading ? '読み込み中...' : `${filteredOrders.length}件の注文 (総数: ${orders.length})`}
                     </p>
                 </div>
-                <button
-                    className="btn btn-secondary"
-                    onClick={fetchOrders}
-                    disabled={isLoading}
-                >
-                    🔄 データを更新
-                </button>
+                <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={fetchOrders}
+                        disabled={isLoading}
+                    >
+                        🔄 更新
+                    </button>
+                    <button
+                        className="btn btn-primary"
+                        onClick={saveAllOrderCosts}
+                        disabled={isSaving || isLoading}
+                    >
+                        {isSaving ? '⏳ 保存中...' : '💾 すべて保存'}
+                    </button>
+                </div>
             </header>
+
+            {/* 保存メッセージ */}
+            {saveMessage && (
+                <div style={{
+                    padding: 'var(--spacing-md)',
+                    marginBottom: 'var(--spacing-lg)',
+                    borderRadius: 'var(--radius-md)',
+                    background: saveMessage.type === 'success' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    border: `1px solid ${saveMessage.type === 'success' ? 'var(--color-success)' : 'var(--color-error)'}`,
+                    color: saveMessage.type === 'success' ? 'var(--color-success)' : 'var(--color-error)'
+                }}>
+                    {saveMessage.type === 'success' ? '✅' : '❌'} {saveMessage.text}
+                </div>
+            )}
 
             {/* ステータスフィルタ */}
             <div className="card" style={{ marginBottom: 'var(--spacing-lg)', padding: 'var(--spacing-md)' }}>
