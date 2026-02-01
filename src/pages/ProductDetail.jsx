@@ -13,6 +13,16 @@ function ProductDetail() {
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState(null)
 
+    // 利益計算用コスト設定
+    const [costs, setCosts] = useState({
+        commission: 6,        // コミッション %
+        serviceFee: 2,        // サービス手数料 %
+        transactionFee: 2.5,  // 取引手数料 %
+        shippingCostJpy: 800, // 国際送料（日本側）JPY
+        shippingCostTwd: 60,  // 台湾送料 TWD
+        exchangeRate: 4.7     // 為替レート (JPY/TWD)
+    })
+
     useEffect(() => {
         if (!isConnected || !accessToken || !shopId || !id) {
             setIsLoading(false)
@@ -84,6 +94,22 @@ function ProductDetail() {
                         dimension: item.dimension,
                         condition: item.condition
                     })
+
+                    // D1からcost_priceとsource_urlを取得
+                    try {
+                        const d1Response = await fetch(`/api/db/products?item_id=${id}&shop_id=${shopId}`)
+                        const d1Result = await d1Response.json()
+                        if (d1Result.status === 'success' && d1Result.data) {
+                            const d1Product = d1Result.data
+                            setProduct(prev => ({
+                                ...prev,
+                                cost_price: d1Product.cost_price,
+                                source_url: d1Product.source_url
+                            }))
+                        }
+                    } catch (e) {
+                        console.log('D1 cost data fetch failed:', e)
+                    }
                 } else {
                     // フォールバック: D1から取得
                     const dbResponse = await fetch(`/api/db/products?item_id=${id}&shop_id=${shopId}`)
@@ -112,7 +138,9 @@ function ProductDetail() {
                             create_time: p.create_time,
                             update_time: p.update_time,
                             category_id: p.category_id,
-                            item_sku: p.item_sku
+                            item_sku: p.item_sku,
+                            cost_price: p.cost_price,
+                            source_url: p.source_url
                         })
                     } else {
                         setError('商品が見つかりませんでした')
@@ -359,6 +387,154 @@ function ProductDetail() {
                             </div>
                         </div>
                     )}
+
+                    {/* 利益予想セクション */}
+                    <div style={{ marginTop: 'var(--spacing-xl)' }}>
+                        <h3 style={{ marginBottom: 'var(--spacing-md)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            💰 利益予想
+                            {product.source_url && (
+                                <a href={product.source_url} target="_blank" rel="noopener noreferrer"
+                                    style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-primary)' }}>
+                                    🔗 仕入れ先
+                                </a>
+                            )}
+                        </h3>
+
+                        {product.cost_price ? (() => {
+                            const sellingPrice = product.price || 0
+                            const commissionTwd = sellingPrice * (costs.commission / 100)
+                            const serviceFeeTwd = sellingPrice * (costs.serviceFee / 100)
+                            const transactionFeeTwd = sellingPrice * (costs.transactionFee / 100)
+                            const totalFeesTwd = commissionTwd + serviceFeeTwd + transactionFeeTwd + costs.shippingCostTwd
+                            const netRevenueTwd = sellingPrice - totalFeesTwd
+                            const netRevenueJpy = netRevenueTwd * costs.exchangeRate
+                            const costJpy = product.cost_price + costs.shippingCostJpy
+                            const profitJpy = netRevenueJpy - costJpy
+                            const profitMargin = sellingPrice > 0 ? (profitJpy / (sellingPrice * costs.exchangeRate)) * 100 : 0
+                            const isLoss = profitJpy < 0
+
+                            return (
+                                <div>
+                                    {/* 利益サマリー */}
+                                    <div style={{
+                                        padding: 'var(--spacing-md)',
+                                        background: isLoss ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                                        borderRadius: 'var(--radius-md)',
+                                        marginBottom: 'var(--spacing-md)'
+                                    }}>
+                                        <div style={{
+                                            fontSize: 'var(--font-size-2xl)',
+                                            fontWeight: 700,
+                                            color: isLoss ? 'var(--color-error)' : 'var(--color-success)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px'
+                                        }}>
+                                            {isLoss ? '⚠️' : '✅'} ¥{Math.round(profitJpy).toLocaleString()}
+                                            <span style={{ fontSize: 'var(--font-size-sm)', opacity: 0.8 }}>
+                                                ({profitMargin.toFixed(1)}%)
+                                            </span>
+                                        </div>
+                                        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                                            予想利益（手数料・送料込み）
+                                        </div>
+                                    </div>
+
+                                    {/* 詳細内訳 */}
+                                    <div style={{
+                                        padding: 'var(--spacing-md)',
+                                        background: 'var(--color-bg-glass)',
+                                        borderRadius: 'var(--radius-md)',
+                                        fontSize: 'var(--font-size-sm)'
+                                    }}>
+                                        <div style={{ marginBottom: '8px', fontWeight: 600 }}>売上内訳</div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span>販売価格</span>
+                                            <span>TWD {sellingPrice.toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', color: 'var(--color-error)' }}>
+                                            <span>コミッション ({costs.commission}%)</span>
+                                            <span>-TWD {Math.round(commissionTwd).toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', color: 'var(--color-error)' }}>
+                                            <span>サービス手数料 ({costs.serviceFee}%)</span>
+                                            <span>-TWD {Math.round(serviceFeeTwd).toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', color: 'var(--color-error)' }}>
+                                            <span>取引手数料 ({costs.transactionFee}%)</span>
+                                            <span>-TWD {Math.round(transactionFeeTwd).toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', color: 'var(--color-error)' }}>
+                                            <span>台湾送料</span>
+                                            <span>-TWD {costs.shippingCostTwd}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontWeight: 600, borderTop: '1px solid var(--color-border)', paddingTop: '4px' }}>
+                                            <span>純売上</span>
+                                            <span>TWD {Math.round(netRevenueTwd).toLocaleString()} (¥{Math.round(netRevenueJpy).toLocaleString()})</span>
+                                        </div>
+
+                                        <div style={{ marginBottom: '8px', fontWeight: 600 }}>仕入れ原価</div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span>商品原価</span>
+                                            <span>¥{product.cost_price.toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                            <span>国際送料</span>
+                                            <span>¥{costs.shippingCostJpy.toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, borderTop: '1px solid var(--color-border)', paddingTop: '4px' }}>
+                                            <span>総原価</span>
+                                            <span>¥{costJpy.toLocaleString()}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* コスト設定（編集可能） */}
+                                    <details style={{ marginTop: 'var(--spacing-md)' }}>
+                                        <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: 'var(--spacing-sm)' }}>⚙️ コスト設定を編集</summary>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--spacing-sm)', padding: 'var(--spacing-md)', background: 'var(--color-bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                                            <label style={{ fontSize: 'var(--font-size-sm)' }}>
+                                                コミッション (%)
+                                                <input type="number" className="form-input" style={{ marginTop: '4px' }}
+                                                    value={costs.commission} onChange={e => setCosts({ ...costs, commission: parseFloat(e.target.value) || 0 })} />
+                                            </label>
+                                            <label style={{ fontSize: 'var(--font-size-sm)' }}>
+                                                サービス手数料 (%)
+                                                <input type="number" className="form-input" style={{ marginTop: '4px' }}
+                                                    value={costs.serviceFee} onChange={e => setCosts({ ...costs, serviceFee: parseFloat(e.target.value) || 0 })} />
+                                            </label>
+                                            <label style={{ fontSize: 'var(--font-size-sm)' }}>
+                                                取引手数料 (%)
+                                                <input type="number" className="form-input" style={{ marginTop: '4px' }}
+                                                    value={costs.transactionFee} onChange={e => setCosts({ ...costs, transactionFee: parseFloat(e.target.value) || 0 })} />
+                                            </label>
+                                            <label style={{ fontSize: 'var(--font-size-sm)' }}>
+                                                台湾送料 (TWD)
+                                                <input type="number" className="form-input" style={{ marginTop: '4px' }}
+                                                    value={costs.shippingCostTwd} onChange={e => setCosts({ ...costs, shippingCostTwd: parseFloat(e.target.value) || 0 })} />
+                                            </label>
+                                            <label style={{ fontSize: 'var(--font-size-sm)' }}>
+                                                国際送料 (JPY)
+                                                <input type="number" className="form-input" style={{ marginTop: '4px' }}
+                                                    value={costs.shippingCostJpy} onChange={e => setCosts({ ...costs, shippingCostJpy: parseFloat(e.target.value) || 0 })} />
+                                            </label>
+                                            <label style={{ fontSize: 'var(--font-size-sm)' }}>
+                                                為替レート (JPY/TWD)
+                                                <input type="number" step="0.1" className="form-input" style={{ marginTop: '4px' }}
+                                                    value={costs.exchangeRate} onChange={e => setCosts({ ...costs, exchangeRate: parseFloat(e.target.value) || 1 })} />
+                                            </label>
+                                        </div>
+                                    </details>
+                                </div>
+                            )
+                        })() : (
+                            <div style={{ padding: 'var(--spacing-md)', background: 'var(--color-bg-glass)', borderRadius: 'var(--radius-md)', color: 'var(--color-text-secondary)' }}>
+                                仕入れ価格が設定されていません。
+                                <Link to={`/products/edit/${product.id}`} style={{ color: 'var(--color-primary)', marginLeft: '8px' }}>
+                                    編集ページで設定 →
+                                </Link>
+                            </div>
+                        )}
+                    </div>
 
                     {/* 更新情報 */}
                     <div style={{
