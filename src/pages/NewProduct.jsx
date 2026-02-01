@@ -339,6 +339,7 @@ function NewProduct() {
         const files = Array.from(e.target.files)
         if (files.length === 0) return
         setIsUploading(true)
+
         const newImages = files.map(file => ({
             file,
             preview: URL.createObjectURL(file),
@@ -346,27 +347,49 @@ function NewProduct() {
             url: null,
             status: 'uploading'
         }))
+
+        // Add new images to state first
         setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }))
 
         try {
-            const updatedImages = [...formData.images, ...newImages]
-            const startIndex = formData.images.length
-            for (let i = startIndex; i < updatedImages.length; i++) {
-                const img = updatedImages[i]
-                if (img.status === 'uploading' && img.file) {
-                    try {
-                        const result = await uploadImage(accessToken, shopId, img.file)
-                        if (result.response && result.response.image_info) {
-                            updatedImages[i] = { ...img, id: result.response.image_info.image_id, url: result.response.image_info.image_url, status: 'done' }
-                            setFormData(prev => ({ ...prev, images: [...updatedImages] }))
-                        } else {
-                            updatedImages[i] = { ...img, status: 'error' }
-                            setFormData(prev => ({ ...prev, images: [...updatedImages] }))
+            // Process each new image
+            for (let i = 0; i < newImages.length; i++) {
+                const img = newImages[i]
+                try {
+                    const result = await uploadImage(accessToken, shopId, img.file)
+                    console.log('Upload result:', result)
+                    if (result.response && result.response.image_info) {
+                        const uploadedImage = {
+                            ...img,
+                            id: result.response.image_info.image_id,
+                            url: result.response.image_info.image_url,
+                            status: 'done'
                         }
-                    } catch (e) {
-                        updatedImages[i] = { ...img, status: 'error' }
-                        setFormData(prev => ({ ...prev, images: [...updatedImages] }))
+                        console.log('Uploaded image:', uploadedImage)
+                        // Update state using functional update to get latest state
+                        setFormData(prev => ({
+                            ...prev,
+                            images: prev.images.map((existingImg, idx) =>
+                                existingImg.preview === img.preview ? uploadedImage : existingImg
+                            )
+                        }))
+                    } else {
+                        console.error('Upload failed:', result)
+                        setFormData(prev => ({
+                            ...prev,
+                            images: prev.images.map((existingImg) =>
+                                existingImg.preview === img.preview ? { ...existingImg, status: 'error' } : existingImg
+                            )
+                        }))
                     }
+                } catch (err) {
+                    console.error('Upload error:', err)
+                    setFormData(prev => ({
+                        ...prev,
+                        images: prev.images.map((existingImg) =>
+                            existingImg.preview === img.preview ? { ...existingImg, status: 'error' } : existingImg
+                        )
+                    }))
                 }
             }
         } catch (err) {
