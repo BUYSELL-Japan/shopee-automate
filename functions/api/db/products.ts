@@ -170,6 +170,8 @@ async function handlePost(db: D1Database, request: Request): Promise<Response> {
  * PUT: 商品を更新（Shopee update_item互換）
  */
 async function handlePut(db: D1Database, request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const shopIdFromUrl = url.searchParams.get("shop_id");
     const body = await request.json() as any;
     const { id, item_id, ...updates } = body;
 
@@ -177,10 +179,26 @@ async function handlePut(db: D1Database, request: Request): Promise<Response> {
         return errorResponse("id or item_id required", 400);
     }
 
-    // 現在の価格を取得（履歴用）
+    // 現在の商品を取得
     const current = await db.prepare(
         "SELECT id, item_id, current_price FROM products WHERE " + (id ? "id = ?" : "item_id = ?")
     ).bind(id || item_id).first<{ id: number, item_id: number, current_price: number }>();
+
+    // 商品が存在しない場合、cost_priceやsource_urlだけの更新なら最小限のレコードを作成
+    if (!current && item_id && (updates.cost_price !== undefined || updates.source_url !== undefined)) {
+        const shopId = shopIdFromUrl ? parseInt(shopIdFromUrl) : null;
+        await db.prepare(`
+            INSERT INTO products (item_id, shop_id, cost_price, source_url, item_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'NORMAL', datetime('now'), datetime('now'))
+        `).bind(
+            item_id,
+            shopId,
+            updates.cost_price || null,
+            updates.source_url || null
+        ).run();
+        return jsonResponse({ status: "success", message: "Product created with cost data" });
+    }
+
 
     // 更新可能フィールド（Shopee API互換）
     const updateFields: string[] = [];

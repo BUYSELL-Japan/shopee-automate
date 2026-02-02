@@ -37,7 +37,34 @@ function ProductList() {
                 // Shopee API から直接取得
                 result = await getProducts(accessToken, shopId, { offset, pageSize: 50 })
                 if (result.status === 'success') {
-                    setProducts(result.data.products || [])
+                    const shopeeProducts = result.data.products || []
+
+                    // D1からコストデータを取得してマージ
+                    try {
+                        const d1Response = await fetch(`/api/db/products?shop_id=${shopId}&limit=500`)
+                        const d1Data = await d1Response.json()
+                        if (d1Data.status === 'success' && d1Data.data?.products) {
+                            const costMap = {}
+                            d1Data.data.products.forEach(p => {
+                                costMap[p.item_id] = {
+                                    cost_price: p.cost_price,
+                                    source_url: p.source_url
+                                }
+                            })
+                            // Shopee商品にコストデータをマージ
+                            shopeeProducts.forEach(p => {
+                                const costData = costMap[p.id]
+                                if (costData) {
+                                    p.cost_price = costData.cost_price
+                                    p.source_url = costData.source_url
+                                }
+                            })
+                        }
+                    } catch (e) {
+                        console.log('D1 cost data fetch failed:', e)
+                    }
+
+                    setProducts(shopeeProducts)
                     setPagination({
                         total: result.data.total || 0,
                         hasNextPage: result.data.has_next_page || false,
