@@ -229,6 +229,99 @@ function NewProduct() {
     const [sourceItemId, setSourceItemId] = useState('47000206128')
     const [isFetchingSource, setIsFetchingSource] = useState(false)
 
+    // ========================================
+    // マルチリージョン対応
+    // ========================================
+    const [listingTargets, setListingTargets] = useState({
+        TW: true,   // 台湾（デフォルトON）
+        MY: false   // マレーシア
+    })
+
+    const [regionSettings, setRegionSettings] = useState({
+        TW: { currency: 'TWD', symbol: 'NT$', exchangeRate: 4.7, commission: 0.1077, serviceFee: 0.03, transactionFee: 0.0254, shippingLocal: 60, shippingIntl: 1350 },
+        MY: { currency: 'MYR', symbol: 'RM', exchangeRate: 31.5, commission: 0.1077, serviceFee: 0.03, transactionFee: 0.0254, shippingLocal: 10, shippingIntl: 1360 }
+    })
+
+    // 国別翻訳テキスト
+    const [regionTexts, setRegionTexts] = useState({
+        TW: { name: '', description: '' },
+        MY: { name: '', description: '' }
+    })
+
+    // 国別価格
+    const [regionPrices, setRegionPrices] = useState({
+        TW: '',
+        MY: ''
+    })
+
+    // リージョン設定をD1から取得
+    useEffect(() => {
+        const fetchRegionSettings = async () => {
+            try {
+                const response = await fetch('/api/db/region-settings')
+                const result = await response.json()
+                if (result.status === 'success' && result.data) {
+                    const settings = {}
+                    result.data.forEach(r => {
+                        settings[r.region] = {
+                            currency: r.currency,
+                            symbol: r.currency_symbol,
+                            exchangeRate: r.exchange_rate,
+                            commission: r.commission_rate,
+                            serviceFee: r.service_fee_rate,
+                            transactionFee: r.transaction_fee_rate,
+                            shippingLocal: r.shipping_cost_local,
+                            shippingIntl: r.shipping_cost_intl_jpy
+                        }
+                    })
+                    setRegionSettings(prev => ({ ...prev, ...settings }))
+                }
+            } catch (e) {
+                console.log('Region settings fetch failed:', e)
+            }
+        }
+        fetchRegionSettings()
+    }, [])
+
+    // 国別利益計算
+    const calculateRegionProfit = (region, costPriceJpy, sellingPriceLocal) => {
+        const s = regionSettings[region]
+        if (!costPriceJpy || !sellingPriceLocal || !s) return null
+
+        const salesJpy = sellingPriceLocal * s.exchangeRate
+        const feeRate = s.commission + s.serviceFee + s.transactionFee
+        const feesLocal = sellingPriceLocal * feeRate
+        const feesJpy = feesLocal * s.exchangeRate
+        const totalCostJpy = parseFloat(costPriceJpy) + s.shippingIntl + (s.shippingLocal * s.exchangeRate)
+        const profitJpy = salesJpy - feesJpy - totalCostJpy
+
+        return {
+            profitJpy: Math.round(profitJpy),
+            isLoss: profitJpy < 0,
+            salesJpy: Math.round(salesJpy),
+            feesJpy: Math.round(feesJpy),
+            shippingJpy: Math.round(s.shippingIntl + s.shippingLocal * s.exchangeRate)
+        }
+    }
+
+    // 国別推奨価格計算（目標利益1000円）
+    const calculateRecommendedPrice = (region, costPriceJpy, targetProfitJpy = 1000) => {
+        const s = regionSettings[region]
+        if (!costPriceJpy || !s) return null
+
+        const feeRate = s.commission + s.serviceFee + s.transactionFee
+        const totalCostJpy = parseFloat(costPriceJpy) + s.shippingIntl + (s.shippingLocal * s.exchangeRate)
+        const requiredSalesJpy = totalCostJpy + targetProfitJpy
+        // salesJpy = priceLocal * exchangeRate - priceLocal * feeRate * exchangeRate
+        // salesJpy = priceLocal * exchangeRate * (1 - feeRate)
+        // priceLocal = salesJpy / (exchangeRate * (1 - feeRate))
+        const effectiveRate = s.exchangeRate * (1 - feeRate)
+        const priceLocal = Math.ceil(requiredSalesJpy / effectiveRate)
+
+        return priceLocal
+    }
+
+
     // 属性更新ヘルパー
     const updateProductAttr = (key, field, value) => {
         setProductAttrs(prev => ({
@@ -435,27 +528,42 @@ function NewProduct() {
         if (!text) return
         setTranslating(prev => ({ ...prev, [field]: true }))
         try {
-            const response = await fetch('/api/ai/translate', {
+            // 台湾語（繁体字中国語）に翻訳
+            const twResponse = await fetch('/api/ai/translate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text })
+                body: JSON.stringify({ text, target_lang: 'zh-TW' })
             })
-            const result = await response.json()
-            if (result.status === 'success') {
+            const twResult = await twResponse.json()
+
+            // 英語（マレーシア用）に翻訳
+            const enResponse = await fetch('/api/ai/translate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, target_lang: 'en' })
+            })
+            const enResult = await enResponse.json()
+
+            if (twResult.status === 'success') {
                 if (field === 'character') {
-                    const translated = result.translation;
-                    // 新しい属性システムに翻訳結果を反映
+                    const translated = twResult.translation;
                     updateProductAttr('character', 'text', translated);
-                    // 旧システムにも反映（互換性のため）
                     setSpecs(prev => ({
                         ...prev,
                         character: { ...prev.character, text: translated, translated: translated }
                     }));
                 } else {
-                    setFormData(prev => ({ ...prev, [field]: result.translation }))
+                    // 台湾語はフォームに設定（メイン表示）
+                    setFormData(prev => ({ ...prev, [field]: twResult.translation }))
+                    // 国別テキストに保存
+                    setRegionTexts(prev => ({
+                        ...prev,
+                        TW: { ...prev.TW, [field]: twResult.translation },
+                        MY: { ...prev.MY, [field]: enResult.status === 'success' ? enResult.translation : '' }
+                    }))
                 }
             } else {
-                alert('翻訳エラー: ' + result.message)
+                alert('翻訳エラー: ' + twResult.message)
             }
         } catch (e) {
             alert('翻訳エラー: ' + e.message)

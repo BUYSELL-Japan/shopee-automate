@@ -27,24 +27,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
 
         const body = await request.json() as { text: string; target_lang?: string };
-        const { text, target_lang = "Traditional Chinese (Taiwan)" } = body;
+        const { text, target_lang = "zh-TW" } = body;
 
         if (!text) {
             return errorResponse("text is required", 400);
         }
 
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                messages: [
-                    {
-                        role: "system",
-                        content: `你是專業的日本動漫公仔翻譯專家，專門為台灣電商市場翻譯商品名稱。
+        // 言語別のシステムプロンプト
+        const systemPrompts: Record<string, string> = {
+            "zh-TW": `你是專業的日本動漫公仔翻譯專家，專門為台灣電商市場翻譯商品名稱。
 
 【重要翻譯規則】
 
@@ -87,7 +78,68 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 BANPRESTO, SEGA, TAITO, Good Smile Company, Kotobukiya, MegaHouse, BANDAI
 
 【輸出格式】
-只輸出翻譯結果，不要任何解釋或額外文字。`
+只輸出翻譯結果，不要任何解釋或額外文字。`,
+
+            "en": `You are a professional Japanese anime figure translator, specializing in translating product names for e-commerce markets in Malaysia and English-speaking regions.
+
+【IMPORTANT TRANSLATION RULES】
+
+**Figure Series Names:**
+- ねんどろいど / Nendoroid → Nendoroid
+- figma → figma
+- Qposket / Q posket → Q Posket
+- 一番くじ → Ichiban Kuji / Prize Figure
+- プライズ / Prize → Prize Figure
+- POP UP PARADE → POP UP PARADE
+- スケールフィギュア → Scale Figure
+
+**Character Names - Use Official English Names:**
+- 初音ミク → Hatsune Miku
+- 鬼滅の刃 → Demon Slayer
+- 竈門炭治郎 → Tanjiro Kamado
+- 我妻善逸 → Zenitsu Agatsuma
+- 呪術廻戦 → Jujutsu Kaisen
+- 五条悟 → Satoru Gojo
+- SPY×FAMILY → SPY×FAMILY
+- アーニャ → Anya Forger
+- 推しの子 → Oshi no Ko
+- ワンピース → One Piece
+- ルフィ → Luffy
+- ドラゴンボール → Dragon Ball
+- 孫悟空 → Goku
+- ナルト → Naruto
+- 進撃の巨人 → Attack on Titan
+
+**Product Condition Terms:**
+- 未開封 → Sealed / New in Box
+- 新品 → Brand New
+- 箱なし → No Box
+- 初版/初回 → First Edition
+- 日版 → Japanese Version
+- Ver. / バージョン → Ver.
+
+**Keep Brand Names in English:**
+BANPRESTO, SEGA, TAITO, Good Smile Company, Kotobukiya, MegaHouse, BANDAI
+
+【OUTPUT FORMAT】
+Only output the translation result, no explanations or extra text.`
+        };
+
+        // デフォルトは繁体字中国語（台湾）
+        const systemPrompt = systemPrompts[target_lang] || systemPrompts["zh-TW"];
+
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: [
+                    {
+                        role: "system",
+                        content: systemPrompt
                     },
                     {
                         role: "user",
