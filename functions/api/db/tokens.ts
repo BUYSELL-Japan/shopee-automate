@@ -42,6 +42,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
  */
 async function handleGet(db: D1Database, url: URL): Promise<Response> {
     const shopId = url.searchParams.get("shop_id");
+    const region = url.searchParams.get("region");
 
     if (shopId) {
         // 特定のショップのトークンを取得
@@ -54,6 +55,36 @@ async function handleGet(db: D1Database, url: URL): Promise<Response> {
         }
 
         // 有効期限をチェック
+        const now = new Date();
+        const accessExpires = token.access_token_expires_at ? new Date(token.access_token_expires_at as string) : null;
+        const isExpired = accessExpires ? now > accessExpires : true;
+
+        return jsonResponse({
+            status: "success",
+            data: {
+                shop_id: token.shop_id,
+                access_token: token.access_token,
+                refresh_token: token.refresh_token,
+                shop_name: token.shop_name,
+                region: token.region,
+                access_token_expires_at: token.access_token_expires_at,
+                refresh_token_expires_at: token.refresh_token_expires_at,
+                is_expired: isExpired,
+                updated_at: token.updated_at
+            }
+        });
+    }
+
+    // リージョン指定で取得
+    if (region) {
+        const token = await db.prepare(`
+            SELECT * FROM tokens WHERE region = ? ORDER BY updated_at DESC LIMIT 1
+        `).bind(region).first();
+
+        if (!token) {
+            return jsonResponse({ status: "error", message: `No token found for region ${region}`, data: null });
+        }
+
         const now = new Date();
         const accessExpires = token.access_token_expires_at ? new Date(token.access_token_expires_at as string) : null;
         const isExpired = accessExpires ? now > accessExpires : true;
