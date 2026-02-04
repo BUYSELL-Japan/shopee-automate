@@ -928,6 +928,151 @@ function NewProduct() {
                                     </div>
                                 </div>
 
+                                {/* ========================================
+                                    翻訳結果表示セクション
+                                   ======================================== */}
+                                {(regionTexts.TW.name || regionTexts.MY.name) && (
+                                    <div style={{
+                                        background: 'linear-gradient(135deg, var(--color-bg-secondary) 0%, var(--color-bg-tertiary) 100%)',
+                                        borderRadius: 'var(--radius-lg)',
+                                        padding: 'var(--spacing-md)',
+                                        marginBottom: 'var(--spacing-lg)',
+                                        border: '1px solid var(--color-border)'
+                                    }}>
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            marginBottom: 'var(--spacing-md)',
+                                            paddingBottom: 'var(--spacing-sm)',
+                                            borderBottom: '1px solid var(--color-border)'
+                                        }}>
+                                            <span style={{ fontSize: '18px' }}>🌐</span>
+                                            <span style={{ fontWeight: 700, fontSize: 'var(--font-size-md)' }}>翻訳結果プレビュー</span>
+                                        </div>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--spacing-md)' }}>
+                                            {/* 台湾 */}
+                                            <div style={{
+                                                background: 'var(--color-bg-glass)',
+                                                borderRadius: 'var(--radius-md)',
+                                                padding: 'var(--spacing-sm)',
+                                                border: listingTargets.TW ? '2px solid var(--color-primary)' : '1px solid var(--color-border)'
+                                            }}>
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    marginBottom: '8px'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={listingTargets.TW}
+                                                        onChange={(e) => setListingTargets(prev => ({ ...prev, TW: e.target.checked }))}
+                                                        style={{ width: '16px', height: '16px' }}
+                                                    />
+                                                    <span style={{ fontSize: '16px' }}>🇹🇼</span>
+                                                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>台湾（繁体字中国語）</span>
+                                                </div>
+                                                {regionTexts.TW.name && (
+                                                    <div style={{ marginBottom: '8px' }}>
+                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '2px' }}>商品名:</div>
+                                                        <div style={{
+                                                            fontSize: 'var(--font-size-sm)',
+                                                            background: 'var(--color-bg-primary)',
+                                                            padding: '8px',
+                                                            borderRadius: 'var(--radius-sm)',
+                                                            border: '1px solid var(--color-border)'
+                                                        }}>{regionTexts.TW.name}</div>
+                                                    </div>
+                                                )}
+                                                {regionTexts.TW.description && (
+                                                    <div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '2px' }}>説明:</div>
+                                                        <div style={{
+                                                            fontSize: 'var(--font-size-xs)',
+                                                            background: 'var(--color-bg-primary)',
+                                                            padding: '8px',
+                                                            borderRadius: 'var(--radius-sm)',
+                                                            border: '1px solid var(--color-border)',
+                                                            maxHeight: '80px',
+                                                            overflow: 'auto'
+                                                        }}>{regionTexts.TW.description}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* マレーシア */}
+                                            <div style={{
+                                                background: 'var(--color-bg-glass)',
+                                                borderRadius: 'var(--radius-md)',
+                                                padding: 'var(--spacing-sm)',
+                                                border: listingTargets.MY ? '2px solid var(--color-accent)' : '1px solid var(--color-border)'
+                                            }}>
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    marginBottom: '8px'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={listingTargets.MY}
+                                                        onChange={(e) => setListingTargets(prev => ({ ...prev, MY: e.target.checked }))}
+                                                        style={{ width: '16px', height: '16px' }}
+                                                    />
+                                                    <span style={{ fontSize: '16px' }}>🇲🇾</span>
+                                                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>マレーシア（英語）</span>
+                                                </div>
+                                                {regionTexts.MY.name && (
+                                                    <div style={{ marginBottom: '8px' }}>
+                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '2px' }}>Product Name:</div>
+                                                        <div style={{
+                                                            fontSize: 'var(--font-size-sm)',
+                                                            background: 'var(--color-bg-primary)',
+                                                            padding: '8px',
+                                                            borderRadius: 'var(--radius-sm)',
+                                                            border: '1px solid var(--color-border)'
+                                                        }}>{regionTexts.MY.name}</div>
+                                                    </div>
+                                                )}
+                                                {regionTexts.MY.description && (
+                                                    <div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '2px' }}>Description:</div>
+                                                        <div style={{
+                                                            fontSize: 'var(--font-size-xs)',
+                                                            background: 'var(--color-bg-primary)',
+                                                            padding: '8px',
+                                                            borderRadius: 'var(--radius-sm)',
+                                                            border: '1px solid var(--color-border)',
+                                                            maxHeight: '80px',
+                                                            overflow: 'auto'
+                                                        }}>{regionTexts.MY.description}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* 出品先サマリー */}
+                                        <div style={{
+                                            marginTop: 'var(--spacing-sm)',
+                                            padding: 'var(--spacing-xs) var(--spacing-sm)',
+                                            background: 'var(--color-bg-primary)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            fontSize: 'var(--font-size-xs)',
+                                            color: 'var(--color-text-secondary)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px'
+                                        }}>
+                                            <span>📤 出品先:</span>
+                                            {listingTargets.TW && <span style={{ background: 'var(--color-primary)', color: 'white', padding: '2px 8px', borderRadius: '10px' }}>🇹🇼 台湾</span>}
+                                            {listingTargets.MY && <span style={{ background: 'var(--color-accent)', color: 'white', padding: '2px 8px', borderRadius: '10px' }}>🇲🇾 マレーシア</span>}
+                                            {!listingTargets.TW && !listingTargets.MY && <span style={{ color: 'var(--color-error)' }}>出品先を選択してください</span>}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* 共通フッターは自動挿入されるため非表示 */}
 
                                 <div className="form-group">
