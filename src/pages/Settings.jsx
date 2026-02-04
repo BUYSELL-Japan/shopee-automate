@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
 import { getAuthUrl, syncProductsToDb } from '../services/shopeeApi'
 
+// リージョン情報
+const REGIONS = {
+    TW: { name: '台湾', flag: '🇹🇼' },
+    MY: { name: 'マレーシア', flag: '🇲🇾' }
+}
 
 function Settings() {
     const [activeTab, setActiveTab] = useState('api')
@@ -12,6 +17,8 @@ function Settings() {
     const [testMessage, setTestMessage] = useState(null)
     const [isSyncing, setIsSyncing] = useState(false)
     const [syncResult, setSyncResult] = useState(null)
+    const [authRegion, setAuthRegion] = useState('TW') // 認証時のリージョン
+    const [registeredShops, setRegisteredShops] = useState([]) // 登録済みショップ一覧
 
     const {
         accessToken: savedAccessToken,
@@ -22,8 +29,25 @@ function Settings() {
         error,
         shopInfo,
         testConnection,
-        disconnect
+        disconnect,
+        activeRegion
     } = useShopeeAuth()
+
+    // 登録済みショップを取得
+    useEffect(() => {
+        const fetchShops = async () => {
+            try {
+                const res = await fetch('/api/db/shops')
+                const data = await res.json()
+                if (data.status === 'success' && data.data) {
+                    setRegisteredShops(data.data)
+                }
+            } catch (e) {
+                console.error('Failed to fetch shops:', e)
+            }
+        }
+        fetchShops()
+    }, [])
 
     const handleInputChange = (e) => {
         const { name, value } = e.target
@@ -42,6 +66,9 @@ function Settings() {
 
     const handleGetAuthUrl = async () => {
         try {
+            // リージョン情報をlocalStorageに保存（コールバック時に使用）
+            localStorage.setItem('shopee_auth_region', authRegion)
+
             const result = await getAuthUrl()
             if (result.status === 'success') {
                 window.open(result.auth_url, '_blank')
@@ -81,6 +108,14 @@ function Settings() {
                         >
                             <span className="nav-icon">🔑</span>
                             <span>API設定</span>
+                        </button>
+                        <button
+                            className={`nav-link ${activeTab === 'shops' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('shops')}
+                            style={{ textAlign: 'left' }}
+                        >
+                            <span className="nav-icon">🏪</span>
+                            <span>ショップ管理</span>
                         </button>
                         <button
                             className={`nav-link ${activeTab === 'account' ? 'active' : ''}`}
@@ -142,7 +177,7 @@ function Settings() {
                                             color: 'var(--color-text-secondary)'
                                         }}>
                                             {isConnected
-                                                ? `Shop ID: ${savedShopId} | Region: ${shopInfo?.region || 'TW'}`
+                                                ? `Shop ID: ${savedShopId} | Region: ${activeRegion}`
                                                 : 'API認証情報を入力して接続してください'}
                                         </div>
                                     </div>
@@ -154,19 +189,45 @@ function Settings() {
                                 )}
                             </div>
 
-                            {/* OAuth Button */}
+                            {/* OAuth Button with Region Selector */}
                             <div style={{
                                 padding: 'var(--spacing-md)',
                                 background: 'var(--color-bg-glass)',
                                 borderRadius: 'var(--radius-md)',
-                                marginBottom: 'var(--spacing-xl)',
-                                textAlign: 'center'
+                                marginBottom: 'var(--spacing-xl)'
                             }}>
                                 <p style={{ marginBottom: 'var(--spacing-md)', color: 'var(--color-text-secondary)' }}>
                                     新しいショップを認証する場合はこちら
                                 </p>
-                                <button className="btn btn-secondary" onClick={handleGetAuthUrl}>
-                                    🔗 Shopee OAuth認証を開始
+
+                                {/* Region Selector */}
+                                <div style={{ marginBottom: 'var(--spacing-md)' }}>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>
+                                        認証するショップのリージョン
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        {Object.entries(REGIONS).map(([regionKey, info]) => (
+                                            <button
+                                                key={regionKey}
+                                                type="button"
+                                                className={`btn ${authRegion === regionKey ? 'btn-primary' : 'btn-secondary'}`}
+                                                onClick={() => setAuthRegion(regionKey)}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    padding: '8px 16px'
+                                                }}
+                                            >
+                                                <span>{info.flag}</span>
+                                                <span>{info.name}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <button className="btn btn-success" onClick={handleGetAuthUrl}>
+                                    🔗 {REGIONS[authRegion].flag} {REGIONS[authRegion].name}ショップを認証
                                 </button>
                             </div>
 

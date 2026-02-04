@@ -3,6 +3,12 @@ import { Link } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
 import { getProducts, getDbProducts, syncProductsToDb, formatPrice, formatPriceWithJPY, twdToJpy, getStatusBadge } from '../services/shopeeApi'
 
+// リージョン情報
+const REGIONS = {
+    TW: { name: '台湾', flag: '🇹🇼', currency: 'TWD', symbol: 'NT$' },
+    MY: { name: 'マレーシア', flag: '🇲🇾', currency: 'MYR', symbol: 'RM' }
+}
+
 function ProductList() {
     const [searchTerm, setSearchTerm] = useState('')
     const [statusFilter, setStatusFilter] = useState('all')
@@ -21,7 +27,8 @@ function ProductList() {
     const [isSyncing, setIsSyncing] = useState(false)
     const [syncMessage, setSyncMessage] = useState(null)
 
-    const { accessToken, shopId, isConnected } = useShopeeAuth()
+    const { accessToken, shopId, isConnected, activeRegion } = useShopeeAuth()
+    const regionInfo = REGIONS[activeRegion] || REGIONS.TW
 
     // 商品一覧を取得（データソースに応じて切り替え）
     const fetchProducts = async (offset = 0) => {
@@ -168,7 +175,7 @@ function ProductList() {
         if (isConnected) {
             fetchProducts()
         }
-    }, [isConnected, accessToken, shopId, dataSource])
+    }, [isConnected, accessToken, shopId, dataSource, activeRegion])
 
     // フィルタリング
     const filteredProducts = products.filter((product) => {
@@ -214,7 +221,21 @@ function ProductList() {
         <div className="page-container animate-fade-in">
             <header className="page-header">
                 <div>
-                    <h1 className="page-title">商品一覧</h1>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <h1 className="page-title">商品一覧</h1>
+                        <span style={{
+                            background: 'var(--color-bg-glass)',
+                            padding: '4px 12px',
+                            borderRadius: '20px',
+                            fontSize: 'var(--font-size-sm)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            border: '1px solid var(--color-border)'
+                        }}>
+                            {regionInfo.flag} {regionInfo.name}
+                        </span>
+                    </div>
                     <p className="page-subtitle">
                         {isLoading ? '読み込み中...' : `${pagination.total}件の商品を管理中`}
                         {dataSource === 'd1' && ' (D1データベース)'}

@@ -28,8 +28,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }
 
     try {
-        const body = await request.json() as { code: string, shop_id: number };
-        const { code, shop_id } = body;
+        const body = await request.json() as { code: string, shop_id: number, region?: string };
+        const { code, shop_id, region = 'TW' } = body;
 
         if (!code || !shop_id) {
             return errorResponse("code and shop_id are required", 400);
@@ -47,13 +47,23 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             return errorResponse(`Shopee API Error: ${tokenResult.error} - ${tokenResult.message || ''}`, 400);
         }
 
-        // D1に保存
+        // D1 tokensテーブルに保存（後方互換性）
         await saveTokenToD1(env.DB, {
             shop_id: shop_id,
             access_token: tokenResult.access_token,
             refresh_token: tokenResult.refresh_token,
             expire_in: tokenResult.expire_in,
-            shop_name: null // 後で取得可能
+            shop_name: null,
+            region: region
+        });
+
+        // D1 shopsテーブルにも保存（マルチリージョン対応）
+        await saveToShopsTable(env.DB, {
+            shop_id: shop_id,
+            access_token: tokenResult.access_token,
+            refresh_token: tokenResult.refresh_token,
+            expire_in: tokenResult.expire_in,
+            region: region
         });
 
         return new Response(JSON.stringify({
@@ -63,7 +73,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 shop_id: shop_id,
                 access_token: tokenResult.access_token,
                 refresh_token: tokenResult.refresh_token,
-                expires_in: tokenResult.expire_in
+                expires_in: tokenResult.expire_in,
+                region: region
             }
         }), {
             status: 200,
@@ -77,7 +88,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 };
 
 /**
- * トークンをD1に保存
+ * トークンをD1 tokensテーブルに保存
  */
 async function saveTokenToD1(db: D1Database, data: {
     shop_id: number;
@@ -85,18 +96,20 @@ async function saveTokenToD1(db: D1Database, data: {
     refresh_token: string;
     expire_in: number;
     shop_name: string | null;
+    region: string;
 }): Promise<void> {
     const accessExpires = new Date(Date.now() + (data.expire_in * 1000)).toISOString();
     const refreshExpires = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString(); // 30日
 
     await db.prepare(`
         INSERT INTO tokens (shop_id, access_token, refresh_token, access_token_expires_at, refresh_token_expires_at, shop_name, region)
-        VALUES (?, ?, ?, ?, ?, ?, 'TW')
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(shop_id) DO UPDATE SET
             access_token = excluded.access_token,
             refresh_token = excluded.refresh_token,
             access_token_expires_at = excluded.access_token_expires_at,
             refresh_token_expires_at = excluded.refresh_token_expires_at,
+            region = excluded.region,
             updated_at = datetime('now')
     `).bind(
         data.shop_id,
@@ -104,8 +117,46 @@ async function saveTokenToD1(db: D1Database, data: {
         data.refresh_token,
         accessExpires,
         refreshExpires,
-        data.shop_name
+        data.shop_name,
+        data.region
     ).run();
+}
+
+/**
+ * ショップ情報をD1 shopsテーブルに保存（マルチリージョン対応）
+ */
+async function saveToShopsTable(db: D1Database, data: {
+    shop_id: number;
+    access_token: string;
+    refresh_token: string;
+    expire_in: number;
+    region: string;
+}): Promise<void> {
+    const tokenExpiresAt = Math.floor(Date.now() / 1000) + data.expire_in;
+
+    try {
+        await db.prepare(`
+            INSERT INTO shops (shop_id, shop_name, region, access_token, refresh_token, token_expires_at, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(shop_id) DO UPDATE SET
+                access_token = excluded.access_token,
+                refresh_token = excluded.refresh_token,
+                token_expires_at = excluded.token_expires_at,
+                region = excluded.region,
+                is_active = 1,
+                updated_at = datetime('now')
+        `).bind(
+            data.shop_id,
+            `${data.region} Shop`,
+            data.region,
+            data.access_token,
+            data.refresh_token,
+            tokenExpiresAt
+        ).run();
+    } catch (e) {
+        // shopsテーブルが存在しない場合はスキップ（後方互換性）
+        console.warn("Failed to save to shops table:", e);
+    }
 }
 
 /**

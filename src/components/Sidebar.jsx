@@ -36,11 +36,16 @@ function Sidebar() {
 
         if (code && shopId) {
             const handleAuth = async () => {
-                const result = await exchangeFullAuth(code, shopId)
+                // localStorageからリージョンを取得（設定ページで保存される）
+                const authRegion = localStorage.getItem('shopee_auth_region') || 'TW'
+
+                const result = await exchangeFullAuth(code, shopId, authRegion)
                 if (result.success) {
                     // 成功したらパラメータを削除してリダイレクト
                     navigate('/settings', { replace: true })
-                    alert('Shopeeとの接続に成功しました！')
+                    // リージョンを切り替え
+                    handleRegionChange(authRegion)
+                    alert(`Shopee ${authRegion}ショップとの接続に成功しました！`)
                 } else {
                     alert('接続エラー: ' + result.error)
                 }

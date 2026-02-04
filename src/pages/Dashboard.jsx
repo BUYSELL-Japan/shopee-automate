@@ -3,6 +3,12 @@ import { Link } from 'react-router-dom'
 import { useShopeeAuth } from '../hooks/useShopeeAuth'
 import { getProducts, getOrders, formatPrice, twdToJpy, getStatusBadge } from '../services/shopeeApi'
 
+// リージョン情報
+const REGIONS = {
+    TW: { name: '台湾', flag: '🇹🇼', currency: 'TWD', symbol: 'NT$' },
+    MY: { name: 'マレーシア', flag: '🇲🇾', currency: 'MYR', symbol: 'RM' }
+}
+
 function Dashboard() {
     const [stats, setStats] = useState({
         totalProducts: 0,
@@ -15,7 +21,8 @@ function Dashboard() {
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState(null)
 
-    const { accessToken, shopId, shopName, isConnected } = useShopeeAuth()
+    const { accessToken, shopId, shopName, isConnected, activeRegion } = useShopeeAuth()
+    const regionInfo = REGIONS[activeRegion] || REGIONS.TW
 
     // データを取得
     const fetchData = async () => {
@@ -62,7 +69,7 @@ function Dashboard() {
         if (isConnected) {
             fetchData()
         }
-    }, [isConnected, accessToken, shopId])
+    }, [isConnected, accessToken, shopId, activeRegion])
 
     // 未接続時のUI
     if (!isConnected) {
@@ -92,7 +99,21 @@ function Dashboard() {
         <div className="page-container animate-fade-in">
             <header className="page-header">
                 <div>
-                    <h1 className="page-title">ダッシュボード</h1>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <h1 className="page-title">ダッシュボード</h1>
+                        <span style={{
+                            background: 'var(--color-bg-glass)',
+                            padding: '4px 12px',
+                            borderRadius: '20px',
+                            fontSize: 'var(--font-size-sm)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            border: '1px solid var(--color-border)'
+                        }}>
+                            {regionInfo.flag} {regionInfo.name}
+                        </span>
+                    </div>
                     <p className="page-subtitle">
                         {shopName ? `${shopName} の概要` : 'ストアの概要を確認できます'}
                     </p>

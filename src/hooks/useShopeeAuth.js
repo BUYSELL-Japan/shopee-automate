@@ -3,15 +3,19 @@ import { testConnection } from '../services/shopeeApi';
 
 const STORAGE_KEY = 'shopee_auth';
 const DB_TOKENS_API = '/api/db/tokens';
+const DB_SHOPS_API = '/api/db/shops';
 
 /**
- * Shopee認証状態を管理するHook (D1永続化対応版)
+ * Shopee認証状態を管理するHook (マルチリージョン対応版)
  * 
- * 優先順位:
- * 1. D1データベース (永続)
- * 2. localStorage (バックアップ)
+ * リージョン切り替え時に自動的にそのリージョンの認証情報を読み込む
  */
 export function useShopeeAuth() {
+    // アクティブリージョン
+    const [activeRegion, setActiveRegion] = useState(() => {
+        return localStorage.getItem('shopee_active_region') || 'TW'
+    });
+
     const [authState, setAuthState] = useState({
         accessToken: '',
         refreshToken: '',
@@ -19,76 +23,99 @@ export function useShopeeAuth() {
         shopName: '',
         isConnected: false,
         lastTested: null,
-        source: null // 'localStorage' | 'd1' | null
+        source: null, // 'localStorage' | 'd1' | null
+        region: 'TW'
     });
+
+    // 各リージョンのショップ情報キャッシュ
+    const [shopsCache, setShopsCache] = useState({});
 
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [shopInfo, setShopInfo] = useState(null);
 
-    // 初期化: D1 -> localStorage の順でトークンを読み込み
+    // リージョン変更イベントをリッスン
     useEffect(() => {
-        const loadAuth = async () => {
-            setIsLoading(true);
-
-            // まずlocalStorageをチェック
-            let localAuth = null;
-            try {
-                const saved = localStorage.getItem(STORAGE_KEY);
-                if (saved) {
-                    localAuth = JSON.parse(saved);
-                }
-            } catch (e) {
-                console.error('Failed to load from localStorage:', e);
-            }
-
-            // shop_idがあればD1をチェック
-            const shopId = localAuth?.shopId;
-            if (shopId) {
-                try {
-                    const response = await fetch(`${DB_TOKENS_API}?shop_id=${shopId}`);
-                    const result = await response.json();
-
-                    if (result.status === 'success' && result.data?.access_token) {
-                        // D1からトークンを読み込み
-                        const d1Auth = {
-                            accessToken: result.data.access_token,
-                            refreshToken: result.data.refresh_token || '',
-                            shopId: String(result.data.shop_id),
-                            shopName: result.data.shop_name || localAuth?.shopName || '',
-                            isConnected: !result.data.is_expired,
-                            lastTested: result.data.updated_at,
-                            source: 'd1'
-                        };
-                        setAuthState(d1Auth);
-
-                        // トークンが期限切れならリフレッシュを試行
-                        if (result.data.is_expired && result.data.refresh_token) {
-                            console.log('Token expired, attempting refresh...');
-                            refreshTokenFromD1(shopId);
-                        }
-
-                        setIsLoading(false);
-                        return;
-                    }
-                } catch (e) {
-                    console.error('Failed to load from D1:', e);
-                }
-            }
-
-            // D1になければlocalStorageを使用
-            if (localAuth) {
-                setAuthState({
-                    ...localAuth,
-                    source: 'localStorage'
-                });
-            }
-
-            setIsLoading(false);
+        const handleRegionChange = (e) => {
+            const newRegion = e.detail;
+            setActiveRegion(newRegion);
         };
 
-        loadAuth();
+        window.addEventListener('regionChanged', handleRegionChange);
+        return () => window.removeEventListener('regionChanged', handleRegionChange);
     }, []);
+
+    // リージョン別のショップ情報を読み込み
+    const loadShopByRegion = useCallback(async (region) => {
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            // D1 shopsテーブルからリージョンのショップを取得
+            const response = await fetch(`${DB_SHOPS_API}?region=${region}&active=true`);
+            const result = await response.json();
+
+            if (result.status === 'success' && result.data && result.data.length > 0) {
+                const shop = result.data[0]; // 最初のアクティブなショップ
+                const shopAuth = {
+                    accessToken: shop.access_token || '',
+                    refreshToken: shop.refresh_token || '',
+                    shopId: String(shop.shop_id),
+                    shopName: shop.shop_name || `${region} Shop`,
+                    isConnected: !!shop.access_token,
+                    lastTested: shop.updated_at,
+                    source: 'd1',
+                    region: region
+                };
+                setAuthState(shopAuth);
+
+                // キャッシュを更新
+                setShopsCache(prev => ({ ...prev, [region]: shopAuth }));
+
+                // localStorageにも保存（リージョン別）
+                localStorage.setItem(`${STORAGE_KEY}_${region}`, JSON.stringify(shopAuth));
+
+                return { success: true, shop: shopAuth };
+            } else {
+                // D1にない場合、localStorageから読み込み
+                const savedKey = `${STORAGE_KEY}_${region}`;
+                const saved = localStorage.getItem(savedKey);
+                if (saved) {
+                    const localAuth = JSON.parse(saved);
+                    setAuthState({ ...localAuth, region });
+                    return { success: true, shop: localAuth };
+                }
+
+                // 既存のトークンAPIからも試行 (後方互換性)
+                const oldSaved = localStorage.getItem(STORAGE_KEY);
+                if (oldSaved && region === 'TW') {
+                    const localAuth = JSON.parse(oldSaved);
+                    setAuthState({ ...localAuth, region: 'TW' });
+                    return { success: true, shop: localAuth };
+                }
+
+                setAuthState(prev => ({
+                    ...prev,
+                    accessToken: '',
+                    shopId: '',
+                    isConnected: false,
+                    region
+                }));
+                return { success: false, error: `No shop found for region ${region}` };
+            }
+        } catch (e) {
+            console.error('Failed to load shop by region:', e);
+            setError(e.message);
+            return { success: false, error: e.message };
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    // 初期化 & リージョン変更時にショップ情報を読み込み
+    useEffect(() => {
+        loadShopByRegion(activeRegion);
+    }, [activeRegion, loadShopByRegion]);
 
     // D1のトークンをリフレッシュ
     const refreshTokenFromD1 = async (shopId) => {
@@ -190,13 +217,13 @@ export function useShopeeAuth() {
     }, [saveAuth]);
 
     // 認証コードを交換（フロントエンド認証フロー用）
-    const exchangeFullAuth = useCallback(async (code, shopId) => {
+    const exchangeFullAuth = useCallback(async (code, shopId, region = 'TW') => {
         setIsLoading(true);
         try {
             const response = await fetch('/api/shopee/exchange', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code, shop_id: parseInt(shopId) })
+                body: JSON.stringify({ code, shop_id: parseInt(shopId), region })
             });
             const result = await response.json();
 
@@ -208,11 +235,18 @@ export function useShopeeAuth() {
                     shopName: '', // 後で更新
                     isConnected: true,
                     lastTested: new Date().toISOString(),
-                    source: 'd1'
+                    source: 'd1',
+                    region: region
                 };
                 setAuthState(d1Auth);
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(d1Auth));
-                return { success: true };
+                setActiveRegion(region);
+                localStorage.setItem(`shopee_auth_${region}`, JSON.stringify(d1Auth));
+                localStorage.setItem('shopee_active_region', region);
+
+                // キャッシュを更新
+                shopsCache[region] = d1Auth;
+
+                return { success: true, region };
             }
             return { success: false, error: result.message || 'Authentication failed' };
         } catch (e) {
@@ -260,9 +294,12 @@ export function useShopeeAuth() {
         isConnected: authState.isConnected,
         lastTested: authState.lastTested,
         source: authState.source, // 'localStorage' | 'd1'
+        activeRegion, // 現在のアクティブリージョン
+        region: authState.region,
         isLoading,
         error,
         shopInfo,
+        shopsCache, // 全リージョンのショップ情報キャッシュ
 
         // アクション
         testConnection: testApiConnection,
@@ -271,6 +308,8 @@ export function useShopeeAuth() {
         saveAuth,
         refreshToken: () => refreshTokenFromD1(authState.shopId),
         loadFromD1,
-        exchangeFullAuth
+        exchangeFullAuth,
+        loadShopByRegion, // リージョン別ショップ読み込み
+        setActiveRegion   // リージョン変更
     };
 }
