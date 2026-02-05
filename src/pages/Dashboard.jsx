@@ -21,11 +21,19 @@ function Dashboard() {
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState(null)
 
-    const { accessToken, shopId, shopName, isConnected, activeRegion } = useShopeeAuth()
+    const { accessToken, shopId, shopName, isConnected, activeRegion, region, isLoading: authLoading } = useShopeeAuth()
     const regionInfo = REGIONS[activeRegion] || REGIONS.TW
 
     // データを取得
     const fetchData = async () => {
+        console.log(`[Dashboard] 📦 fetchData called - region: ${activeRegion}, authRegion: ${region}, shopId: ${shopId}`)
+
+        // リージョンが一致しない場合はスキップ
+        if (activeRegion !== region) {
+            console.log(`[Dashboard] ⚠️ Skipping fetch - region mismatch (Active: ${activeRegion}, Auth: ${region})`)
+            return
+        }
+
         if (!isConnected || !accessToken || !shopId) return
 
         setIsLoading(true)
@@ -37,7 +45,7 @@ function Dashboard() {
                 getProducts(accessToken, shopId, { pageSize: 50 }),
                 getOrders(accessToken, shopId, { orderStatus: 'ALL', pageSize: 50 })
             ])
-
+            // ...
             if (productsResult.status === 'success') {
                 const productList = productsResult.data.products || []
                 setProducts(productList.slice(0, 4))
@@ -66,10 +74,11 @@ function Dashboard() {
     }
 
     useEffect(() => {
-        if (isConnected) {
+        console.log(`[Dashboard] 🔄 useEffect triggered - isConnected: ${isConnected}, authLoading: ${authLoading}, activeRegion: ${activeRegion}, authRegion: ${region}, shopId: ${shopId}`)
+        if (!authLoading && isConnected && activeRegion === region) {
             fetchData()
         }
-    }, [isConnected, accessToken, shopId, activeRegion])
+    }, [isConnected, accessToken, shopId, activeRegion, region, authLoading])
 
     // 未接続時のUI
     if (!isConnected) {

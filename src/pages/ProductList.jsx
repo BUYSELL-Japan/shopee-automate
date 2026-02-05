@@ -27,12 +27,23 @@ function ProductList() {
     const [isSyncing, setIsSyncing] = useState(false)
     const [syncMessage, setSyncMessage] = useState(null)
 
-    const { accessToken, shopId, isConnected, activeRegion } = useShopeeAuth()
+    const { accessToken, shopId, isConnected, activeRegion, region, isLoading: authLoading } = useShopeeAuth()
     const regionInfo = REGIONS[activeRegion] || REGIONS.TW
 
     // 商品一覧を取得（データソースに応じて切り替え）
     const fetchProducts = async (offset = 0) => {
-        if (!isConnected || !accessToken || !shopId) return
+        console.log(`[ProductList] 📦 fetchProducts called - region: ${activeRegion}, authRegion: ${region}, shopId: ${shopId}, isConnected: ${isConnected}, authLoading: ${authLoading}`)
+
+        // リージョンが一致しない場合はスキップ（まだ切り替え中）
+        if (activeRegion !== region) {
+            console.log(`[ProductList] ⚠️ Skipping fetch - region mismatch (Active: ${activeRegion}, Auth: ${region})`)
+            return
+        }
+
+        if (!isConnected || !accessToken || !shopId) {
+            console.log('[ProductList] ⚠️ Skipping fetch - not connected or missing credentials')
+            return
+        }
 
         setIsLoading(true)
         setError(null)
@@ -78,55 +89,49 @@ function ProductList() {
                         nextOffset: result.data.next_offset || 0
                     })
                 } else {
-                    setError(result.message || '商品の取得に失敗しました')
+                    throw new Error(result.message || '商品一覧の取得に失敗しました')
                 }
             } else {
-                // D1 データベースから取得
-                result = await getDbProducts(shopId, { offset, limit: 100 })
+                // D1データベースから取得
+                const result = await getDbProducts(shopId, offset, 50)
                 if (result.status === 'success') {
-                    // D1の商品データをShopee形式に変換
-                    const dbProducts = (result.data.products || []).map(p => ({
-                        id: p.item_id || p.id,
-                        item_sku: p.item_sku,  // Parent SKU
-                        name: p.item_name,
-                        description: p.description,
-                        price: p.current_price || p.original_price || 0,
-                        originalPrice: p.original_price || 0,
-                        currency: p.currency || 'TWD',
-                        stock: p.stock || 0,
-                        status: mapDbStatus(p.item_status),
-                        image: p.image_url,
-                        images: p.image_url_list || [],
-                        category_id: p.category_id,
-                        sold: p.sold || 0,
-                        views: p.views || 0,
-                        likes: p.likes || 0,
-                        rating_star: p.rating_star || 0,
-                        create_time: p.create_time,
-                        update_time: p.update_time,
-                        // D1固有のフィールド
-                        custom_price: p.custom_price,
-                        cost_price: p.cost_price,
-                        source_url: p.source_url,
-                        notes: p.notes,
-                        last_synced_at: p.last_synced_at
-                    }))
-                    setProducts(dbProducts)
+                    setProducts(result.data.products || [])
                     setPagination({
-                        total: result.data.total || dbProducts.length,
-                        hasNextPage: false,
-                        nextOffset: 0
+                        total: result.data.total || 0,
+                        hasNextPage: result.data.has_next_page || false,
+                        nextOffset: result.data.next_offset || 0
                     })
                 } else {
-                    setError(result.message || 'D1からの取得に失敗しました')
+                    throw new Error(result.message || 'D1からのデータ取得に失敗しました')
                 }
             }
         } catch (e) {
-            setError(e.message || 'エラーが発生しました')
+            console.error('Fetch error:', e)
+            setError(e.message || '予期せぬエラーが発生しました')
+            // エラー時はlocalStorageからキャッシュを表示（あれば）
         } finally {
             setIsLoading(false)
         }
     }
+
+    // ステータスを変換
+    const mapDbStatus = (status) => {
+        const map = {
+            'NORMAL': 'active',
+            'UNLIST': 'inactive',
+            'BANNED': 'banned',
+            'DELETED': 'deleted'
+        }
+        return map[status] || status || 'unknown'
+    }
+
+    useEffect(() => {
+        console.log(`[ProductList] 🔄 useEffect triggered - isConnected: ${isConnected}, authLoading: ${authLoading}, activeRegion: ${activeRegion}, authRegion: ${region}, shopId: ${shopId}`)
+        // authLoadingが完了し、かつリージョンが一致する場合のみfetch
+        if (!authLoading && isConnected && activeRegion === region) {
+            fetchProducts()
+        }
+    }, [isConnected, accessToken, shopId, dataSource, activeRegion, region, authLoading])
 
     // D1に同期
     const handleSync = async () => {
@@ -159,23 +164,6 @@ function ProductList() {
             setIsSyncing(false)
         }
     }
-
-    // ステータスを変換
-    const mapDbStatus = (status) => {
-        const map = {
-            'NORMAL': 'active',
-            'UNLIST': 'inactive',
-            'BANNED': 'banned',
-            'DELETED': 'deleted'
-        }
-        return map[status] || status || 'unknown'
-    }
-
-    useEffect(() => {
-        if (isConnected) {
-            fetchProducts()
-        }
-    }, [isConnected, accessToken, shopId, dataSource, activeRegion])
 
     // フィルタリング
     const filteredProducts = products.filter((product) => {

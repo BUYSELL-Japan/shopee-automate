@@ -1,0 +1,173 @@
+{
+  "routes": [
+    {
+      "routePath": "/api/ai/translate",
+      "mountPath": "/api/ai",
+      "method": "",
+      "module": [
+        "api/ai/translate.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/db/order-costs",
+      "mountPath": "/api/db",
+      "method": "",
+      "module": [
+        "api/db/order-costs.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/db/price-rules",
+      "mountPath": "/api/db",
+      "method": "",
+      "module": [
+        "api/db/price-rules.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/db/products",
+      "mountPath": "/api/db",
+      "method": "",
+      "module": [
+        "api/db/products.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/db/region-settings",
+      "mountPath": "/api/db",
+      "method": "",
+      "module": [
+        "api/db/region-settings.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/db/shops",
+      "mountPath": "/api/db",
+      "method": "",
+      "module": [
+        "api/db/shops.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/db/sync",
+      "mountPath": "/api/db",
+      "method": "",
+      "module": [
+        "api/db/sync.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/db/tokens",
+      "mountPath": "/api/db",
+      "method": "",
+      "module": [
+        "api/db/tokens.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/add_item",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/add_item.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/attributes",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/attributes.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/auth",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/auth.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/categories",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/categories.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/exchange",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/exchange.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/item_detail",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/item_detail.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/logistics",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/logistics.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/orders",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/orders.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/products",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/products.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/test-connection",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/test-connection.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/update",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/update.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/shopee/upload",
+      "mountPath": "/api/shopee",
+      "method": "",
+      "module": [
+        "api/shopee/upload.ts:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/callback",
+      "mountPath": "/api",
+      "method": "",
+      "module": [
+        "api/callback.ts:onRequest"
+      ]
+    }
+  ],
+  "baseURL": "/"
+}
