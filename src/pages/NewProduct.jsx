@@ -173,7 +173,7 @@ function SpecSelect({ label, specKey, specData, onChange }) {
 
 function NewProduct() {
     const navigate = useNavigate()
-    const { accessToken, shopId, isConnected, activeRegion, loadShopByRegion } = useShopeeAuth()
+    const { accessToken, shopId, isConnected, activeRegion, loadShopByRegion, refreshShopToken } = useShopeeAuth()
 
     // フォーム状態
     const [formData, setFormData] = useState({
@@ -523,6 +523,14 @@ function NewProduct() {
         }
     }, [formData.costPrice])
 
+    // 地域別テキストの手動編集用
+    const handleChangeRegionText = (region, field, value) => {
+        setRegionTexts(prev => ({
+            ...prev,
+            [region]: { ...prev[region], [field]: value }
+        }))
+    }
+
     const handleTranslate = async (field) => {
         const text = field === 'character' ? characterInput : formData[field]
         if (!text) return
@@ -553,9 +561,7 @@ function NewProduct() {
                         character: { ...prev.character, text: translated, translated: translated }
                     }));
                 } else {
-                    // 台湾語はフォームに設定（メイン表示）
-                    setFormData(prev => ({ ...prev, [field]: twResult.translation }))
-                    // 国別テキストに保存
+                    // フォーム（日本語）は上書きせず、国別テキストのみ更新する
                     setRegionTexts(prev => ({
                         ...prev,
                         TW: { ...prev.TW, [field]: twResult.translation },
@@ -798,181 +804,177 @@ function NewProduct() {
 
             // ループ処理で各国の出品を行う
             for (const region of targets) {
-                console.log(`🚀 Starting submission for ${region}...`)
+                let attempts = 0
+                const maxAttempts = 2
 
-                try {
-                    // 1. 認証情報の取得
-                    let regionAuth = { accessToken, shopId }
-                    if (region !== activeRegion) {
-                        console.log(`Swapping auth for ${region}...`)
-                        const authRes = await loadShopByRegion(region)
-                        if (!authRes.success || !authRes.shop.isConnected) {
-                            throw new Error(`${region}のショップ認証情報が見つかりません。接続設定を確認してください。`)
-                        }
-                        regionAuth = {
-                            accessToken: authRes.shop.accessToken,
-                            shopId: authRes.shop.shopId
-                        }
-                    }
+                while (attempts < maxAttempts) {
+                    attempts++
+                    console.log(`🚀 Starting submission for ${region} (Attempt ${attempts})...`)
 
-                    // 2. 物流情報の取得・設定
-                    let regionLogistics = []
-                    if (region === activeRegion) {
-                        regionLogistics = logistics.filter(l => l.enabled).map(l => ({ logistic_id: l.logistics_channel_id, enabled: true }))
-                    } else {
-                        // アクティブでない場合、そのショップの物流情報を取得
-                        console.log(`Fetching logistics for ${region}...`)
-                        const logRes = await getLogistics(regionAuth.accessToken, regionAuth.shopId)
-                        if (logRes.response && logRes.response.logistics_channel_list) {
-                            // 海運以外を自動で有効化
-                            const validChannels = logRes.response.logistics_channel_list.filter(l =>
-                                l.logistics_channel_name !== '蝦皮海外 - 蝦皮店到店（海運）' &&
-                                !l.logistics_channel_name.includes('海運') &&
-                                !l.logistics_channel_name.includes('Sea') // マレーシア等は英語の可能性
-                            );
-                            // 通常配送(Standard)を優先
-                            regionLogistics = validChannels.map(l => ({ logistic_id: l.logistics_channel_id, enabled: true }))
-                        }
-                    }
-
-                    // 3. 画像の準備（アクティブリージョン以外は再アップロードが必要）
-                    let regionImageIds = []
-                    if (region === activeRegion) {
-                        regionImageIds = validImages.map(img => img.id)
-                    } else {
-                        console.log(`Re-uploading images for ${region}...`)
-                        const newlyUploadedIds = []
-                        for (const img of validImages) {
-                            try {
-                                // 元のFileオブジェクトを使用してアップロード
-                                const res = await uploadImage(regionAuth.accessToken, regionAuth.shopId, img.file)
-                                if (res.response && res.response.image_info) {
-                                    newlyUploadedIds.push(res.response.image_info.image_id)
-                                }
-                            } catch (uploadErr) {
-                                console.error(`Image upload failed for ${region}:`, uploadErr)
+                    try {
+                        // 1. 認証情報の取得
+                        let regionAuth = { accessToken, shopId }
+                        // アクティブリージョン以外、または再試行時は必ず最新のトークンを取得する
+                        if (region !== activeRegion || attempts > 1) {
+                            console.log(`Loading auth for ${region}...`)
+                            const authRes = await loadShopByRegion(region)
+                            if (!authRes.success || !authRes.shop.isConnected) {
+                                throw new Error(`${region}のショップ認証情報が見つかりません。接続設定を確認してください。`)
+                            }
+                            regionAuth = {
+                                accessToken: authRes.shop.accessToken,
+                                shopId: authRes.shop.shopId
                             }
                         }
-                        if (newlyUploadedIds.length === 0) throw new Error('画像のアップロードに失敗しました')
-                        regionImageIds = newlyUploadedIds
-                    }
 
-                    // 4. 価格計算
-                    let regionPrice = 0
-                    if (region === activeRegion) {
-                        regionPrice = parseFloat(formData.price)
-                    } else {
-                        // 原価設定があれば、その国の計算式で算出
-                        if (formData.costPrice) {
-                            const recommended = calculateRecommendedPrice(region, parseFloat(formData.costPrice))
-                            regionPrice = recommended || 0
+                        // 2. 物流情報の取得・設定
+                        let regionLogistics = []
+                        if (region === activeRegion && attempts === 1) {
+                            regionLogistics = logistics.filter(l => l.enabled).map(l => ({ logistic_id: l.logistics_channel_id, enabled: true }))
+                        } else {
+                            // アクティブでない場合、そのショップの物流情報を取得
+                            console.log(`Fetching logistics for ${region}...`)
+                            const logRes = await getLogistics(regionAuth.accessToken, regionAuth.shopId)
+                            if (logRes.response && logRes.response.logistics_channel_list) {
+                                // 海運以外を自動で有効化
+                                const validChannels = logRes.response.logistics_channel_list.filter(l =>
+                                    l.logistics_channel_name !== '蝦皮海外 - 蝦皮店到店（海運）' &&
+                                    !l.logistics_channel_name.includes('海運') &&
+                                    !l.logistics_channel_name.includes('Sea') // マレーシア等は英語の可能性
+                                );
+                                // 通常配送(Standard)を優先
+                                regionLogistics = validChannels.map(l => ({ logistic_id: l.logistics_channel_id, enabled: true }))
+                            }
                         }
 
-                        // 原価がない、または計算失敗時は単純換算（簡易ロジック）
-                        if (!regionPrice) {
-                            // TWD -> JPY -> TargetCurrency
-                            const baseTwd = parseFloat(formData.price)
-                            const baseJpy = Math.round(baseTwd * regionSettings.TW.exchangeRate) // TWD -> JPY (approx)
-                            // JPY -> Target
-                            // priceLocal = salesJpy / (exchangeRate * (1 - feeRate)) simplified...
-                            // Actually, just convert JPY to target currency simply for now if strict calc fails?
-                            // Better: use calculateRecommendedPrice with derived JPY cost (assuming profit margin included in baseTwd)
-                            // This is complex. Fallback: Direct currency conversion
-
-                            // 簡易: BasePrice(TWD) * (TargetRate / BaseRate) ??? 
-                            // No, Rates are relative to JPY usually in settings.
-                            // Settings: TW.exchangeRate = 4.7 (1 TWD = 4.7 JPY) ??? No, usually 1 TWD = X JPY ?
-                            // Code says: TWD_JPY_RATE: 4.7 (1 TWD = 4.7 JPY)
-                            // NewProduct.jsx line 19: TWD_JPY_RATE: 4.7.
-                            // regionSettings also has exchangeRate.
-
-                            const jpyVal = baseTwd * (regionSettings.TW?.exchangeRate || 4.7)
-                            const targetRate = regionSettings[region]?.exchangeRate || 1
-                            regionPrice = Math.ceil(jpyVal / targetRate) // JPY / Rate = Local ? 
-                            // Check regionSettings usage: 
-                            // salesJpy = sellingPriceLocal * s.exchangeRate 
-                            // So sellingPriceLocal = salesJpy / s.exchangeRate
-                            regionPrice = Math.ceil(jpyVal / targetRate)
+                        // 3. 画像の準備（アクティブリージョン以外は再アップロードが必要）
+                        let regionImageIds = []
+                        if (region === activeRegion && attempts === 1) {
+                            regionImageIds = validImages.map(img => img.id)
+                        } else {
+                            console.log(`Re-uploading images for ${region}...`)
+                            const newlyUploadedIds = []
+                            for (const img of validImages) {
+                                try {
+                                    // 元のFileオブジェクトを使用してアップロード
+                                    const res = await uploadImage(regionAuth.accessToken, regionAuth.shopId, img.file)
+                                    if (res.response && res.response.image_info) {
+                                        newlyUploadedIds.push(res.response.image_info.image_id)
+                                    }
+                                } catch (uploadErr) {
+                                    console.error(`Image upload failed for ${region}:`, uploadErr)
+                                }
+                            }
+                            if (newlyUploadedIds.length === 0) throw new Error('画像のアップロードに失敗しました')
+                            regionImageIds = newlyUploadedIds
                         }
-                    }
 
-                    // 5. テキスト情報
-                    const regionName = regionTexts[region].name || formData.name
-                    const regionDesc = (regionTexts[region].description || formData.description) + `\n\n${formData.descriptionFooter}`
+                        // 4. 価格計算
+                        let regionPrice = 0
+                        if (region === activeRegion) {
+                            regionPrice = parseFloat(formData.price)
+                        } else {
+                            // 原価設定があれば、その国の計算式で算出
+                            if (formData.costPrice) {
+                                const recommended = calculateRecommendedPrice(region, parseFloat(formData.costPrice))
+                                regionPrice = recommended || 0
+                            }
 
-                    // 6. Data Payload Construction
-                    // Brand
-                    let brandPayload = undefined;
-                    if (formData.brandId) {
-                        // Note: Brand IDs are often region specific or global.
-                        // Standard brands (Banpresto etc) usually share IDs but not always.
-                        // For now assume same ID works or use 'No Brand' if fail?
-                        // Current UI uses a hardcoded list.
-                        // If API fails due to brand, we might need a fallback.
-                        const brandIdNum = parseInt(formData.brandId);
-                        let brandName = "";
-                        // Try to find name from options
-                        const matchOption = brandOptions.find(o => o.value_id === brandIdNum);
-                        if (matchOption) brandName = matchOption.display_value_name;
-                        else if (brandIdNum === 1146303) brandName = "BANPRESTO";
-                        else brandName = "General";
-                        if (region !== activeRegion) {
-                            // 他リージョンでブランドIDが通用するか不明だが、まずは送信してみる
-                            // エラーが出たらブランドなし(0)で再送などのロジックが必要だが、今回はそのまま送信
+                            // 原価がない、または計算失敗時は単純換算（簡易ロジック）
+                            if (!regionPrice) {
+                                const baseTwd = parseFloat(formData.price)
+                                const jpyVal = baseTwd * (regionSettings.TW?.exchangeRate || 4.7)
+                                const targetRate = regionSettings[region]?.exchangeRate || 1
+                                regionPrice = Math.ceil(jpyVal / targetRate)
+                            }
                         }
-                        brandPayload = { brand_id: brandIdNum, original_brand_name: brandName };
+
+                        // 5. テキスト情報
+                        const regionName = regionTexts[region].name || formData.name
+                        const regionDesc = (regionTexts[region].description || formData.description) + `\n\n${formData.descriptionFooter}`
+
+                        // 6. Data Payload Construction
+                        // Brand
+                        let brandPayload = undefined;
+                        if (formData.brandId) {
+                            const brandIdNum = parseInt(formData.brandId);
+                            let brandName = "";
+                            const matchOption = brandOptions.find(o => o.value_id === brandIdNum);
+                            if (matchOption) brandName = matchOption.display_value_name;
+                            else if (brandIdNum === 1146303) brandName = "BANPRESTO";
+                            else brandName = "General";
+
+                            brandPayload = { brand_id: brandIdNum, original_brand_name: brandName };
+                        }
+
+                        const stockVal = parseInt(formData.stock);
+                        const attributes = createAttributes(region)
+
+                        const payload = {
+                            item_name: regionName,
+                            description: regionDesc,
+                            original_price: regionPrice,
+                            price: regionPrice,
+                            normal_stock: stockVal,
+                            seller_stock: [{ stock: stockVal }],
+                            category_id: parseInt(formData.category),
+                            weight: parseFloat(formData.weight),
+                            image: { image_id_list: regionImageIds },
+                            logistic_info: regionLogistics,
+                            attribute_list: attributes,
+                            brand: brandPayload
+                        }
+
+                        console.log(`Submitting payload to ${region}:`, JSON.stringify(payload, null, 2))
+                        const result = await addItem(regionAuth.accessToken, regionAuth.shopId, payload)
+
+                        if (result.error || (result.response && result.response.error)) {
+                            const msg = result.message || result.error || (result.response && result.response.message) || "Unknown Error";
+                            throw new Error(msg)
+                        }
+
+                        // Success
+                        const newItemId = result.response?.item_id || result.item_id
+                        results.push({ region, status: 'success', itemId: newItemId })
+
+                        // D1同期 (原価情報など)
+                        if (newItemId && (formData.costPrice || formData.sourceUrls.some(url => url))) {
+                            const validUrls = formData.sourceUrls.filter(url => url && url.trim())
+                            const sourceUrlJson = validUrls.length > 0 ? JSON.stringify(validUrls) : null
+                            await fetch(`/api/db/products?shop_id=${regionAuth.shopId}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    item_id: newItemId,
+                                    cost_price: parseFloat(formData.costPrice) || null,
+                                    source_url: sourceUrlJson
+                                })
+                            }).catch(e => console.error('D1 save error:', e))
+                        }
+
+                        // 成功したらループを抜ける
+                        break
+
+                    } catch (regionError) {
+                        console.error(`Error processing ${region}:`, regionError)
+
+                        // トークンエラーの場合はリフレッシュして再試行
+                        const errMsg = regionError.message || ''
+                        if (attempts < maxAttempts && (errMsg.includes('Invalid access_token') || errMsg.includes('403') || errMsg.includes('401'))) {
+                            console.log(`⚠️ Token expired for ${region}. Refreshing and retrying...`)
+                            const s = await loadShopByRegion(region)
+                            if (s.success) {
+                                const refreshRes = await refreshShopToken(s.shop.shopId)
+                                if (refreshRes.success) {
+                                    console.log(`✅ Token refreshed for ${region}. Retrying...`)
+                                    continue // 次の attempt へ
+                                }
+                            }
+                        }
+
+                        results.push({ region, status: 'error', message: regionError.message })
+                        break // エラーとして終了
                     }
-
-                    const stockVal = parseInt(formData.stock);
-                    const attributes = createAttributes(region)
-
-                    const payload = {
-                        item_name: regionName,
-                        description: regionDesc,
-                        original_price: regionPrice,
-                        price: regionPrice,
-                        normal_stock: stockVal,
-                        seller_stock: [{ stock: stockVal }],
-                        category_id: parseInt(formData.category), // Category IDs are usually consistent for global items, but might differ. 
-                        // However, user selected from current region's tree.
-                        // Cross-border usually maps them.
-                        weight: parseFloat(formData.weight),
-                        image: { image_id_list: regionImageIds },
-                        logistic_info: regionLogistics,
-                        attribute_list: attributes,
-                        brand: brandPayload
-                    }
-
-                    console.log(`Submitting payload to ${region}:`, JSON.stringify(payload, null, 2))
-                    const result = await addItem(regionAuth.accessToken, regionAuth.shopId, payload)
-
-                    if (result.error || (result.response && result.response.error)) {
-                        const msg = result.message || result.error || (result.response && result.response.message) || "Unknown Error";
-                        throw new Error(msg)
-                    }
-
-                    // Success
-                    const newItemId = result.response?.item_id || result.item_id
-                    results.push({ region, status: 'success', itemId: newItemId })
-
-                    // D1同期 (原価情報など)
-                    if (newItemId && (formData.costPrice || formData.sourceUrls.some(url => url))) {
-                        const validUrls = formData.sourceUrls.filter(url => url && url.trim())
-                        const sourceUrlJson = validUrls.length > 0 ? JSON.stringify(validUrls) : null
-                        await fetch(`/api/db/products?shop_id=${regionAuth.shopId}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                item_id: newItemId,
-                                cost_price: parseFloat(formData.costPrice) || null,
-                                source_url: sourceUrlJson
-                            })
-                        }).catch(e => console.error('D1 save error:', e))
-                    }
-
-                } catch (regionError) {
-                    console.error(`Error processing ${region}:`, regionError)
-                    results.push({ region, status: 'error', message: regionError.message })
                 }
             }
 
@@ -1069,9 +1071,9 @@ function NewProduct() {
                                 </div>
 
                                 {/* ========================================
-                                    翻訳結果表示セクション
+                                    多言語編集・確認セクション
                                    ======================================== */}
-                                {(regionTexts.TW.name || regionTexts.MY.name) && (
+                                {(regionTexts.TW.name || regionTexts.MY.name || regionTexts.TW.description || regionTexts.MY.description) && (
                                     <div style={{
                                         background: 'linear-gradient(135deg, var(--color-bg-secondary) 0%, var(--color-bg-tertiary) 100%)',
                                         borderRadius: 'var(--radius-lg)',
@@ -1082,29 +1084,55 @@ function NewProduct() {
                                         <div style={{
                                             display: 'flex',
                                             alignItems: 'center',
-                                            gap: '8px',
+                                            justifyContent: 'space-between',
                                             marginBottom: 'var(--spacing-md)',
                                             paddingBottom: 'var(--spacing-sm)',
                                             borderBottom: '1px solid var(--color-border)'
                                         }}>
-                                            <span style={{ fontSize: '18px' }}>🌐</span>
-                                            <span style={{ fontWeight: 700, fontSize: 'var(--font-size-md)' }}>翻訳結果プレビュー</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span style={{ fontSize: '18px' }}>🌐</span>
+                                                <span style={{ fontWeight: 700, fontSize: 'var(--font-size-md)' }}>多言語設定・編集</span>
+                                            </div>
+                                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                                ※ここでの編集内容は各国の出品データに反映されます
+                                            </div>
                                         </div>
 
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--spacing-md)' }}>
-                                            {/* 台湾 */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) minmax(200px, 1fr) minmax(200px, 1fr)', gap: 'var(--spacing-md)' }}>
+                                            {/* 1. 日本語 (原文) */}
+                                            <div style={{
+                                                background: 'var(--color-bg-primary)',
+                                                borderRadius: 'var(--radius-md)',
+                                                padding: 'var(--spacing-sm)',
+                                                border: '1px solid var(--color-border)',
+                                                opacity: 0.8
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', borderBottom: '1px dashed #ccc', paddingBottom: '4px' }}>
+                                                    <span style={{ fontSize: '16px' }}>🇯🇵</span>
+                                                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>日本 (原文)</span>
+                                                </div>
+                                                <div style={{ marginBottom: '12px' }}>
+                                                    <label style={{ fontSize: '11px', color: 'var(--color-text-secondary)', display: 'block' }}>商品名</label>
+                                                    <div style={{ fontSize: '12px', padding: '4px', background: '#f5f5f5', borderRadius: '4px', minHeight: '20px' }}>
+                                                        {formData.name || '(未入力)'}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label style={{ fontSize: '11px', color: 'var(--color-text-secondary)', display: 'block' }}>商品説明</label>
+                                                    <div style={{ fontSize: '11px', padding: '4px', background: '#f5f5f5', borderRadius: '4px', maxHeight: '150px', overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                                                        {formData.description || '(未入力)'}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* 2. 台湾 (繁体字) - 編集可能 */}
                                             <div style={{
                                                 background: 'var(--color-bg-glass)',
                                                 borderRadius: 'var(--radius-md)',
                                                 padding: 'var(--spacing-sm)',
                                                 border: listingTargets.TW ? '2px solid var(--color-primary)' : '1px solid var(--color-border)'
                                             }}>
-                                                <div style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '6px',
-                                                    marginBottom: '8px'
-                                                }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', borderBottom: '1px dashed var(--color-border)', paddingBottom: '4px' }}>
                                                     <input
                                                         type="checkbox"
                                                         checked={listingTargets.TW}
@@ -1112,49 +1140,39 @@ function NewProduct() {
                                                         style={{ width: '16px', height: '16px' }}
                                                     />
                                                     <span style={{ fontSize: '16px' }}>🇹🇼</span>
-                                                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>台湾（繁体字中国語）</span>
+                                                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>台湾 (繁体字)</span>
                                                 </div>
-                                                {regionTexts.TW.name && (
-                                                    <div style={{ marginBottom: '8px' }}>
-                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '2px' }}>商品名:</div>
-                                                        <div style={{
-                                                            fontSize: 'var(--font-size-sm)',
-                                                            background: 'var(--color-bg-primary)',
-                                                            padding: '8px',
-                                                            borderRadius: 'var(--radius-sm)',
-                                                            border: '1px solid var(--color-border)'
-                                                        }}>{regionTexts.TW.name}</div>
-                                                    </div>
-                                                )}
-                                                {regionTexts.TW.description && (
-                                                    <div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '2px' }}>説明:</div>
-                                                        <div style={{
-                                                            fontSize: 'var(--font-size-xs)',
-                                                            background: 'var(--color-bg-primary)',
-                                                            padding: '8px',
-                                                            borderRadius: 'var(--radius-sm)',
-                                                            border: '1px solid var(--color-border)',
-                                                            maxHeight: '80px',
-                                                            overflow: 'auto'
-                                                        }}>{regionTexts.TW.description}</div>
-                                                    </div>
-                                                )}
+                                                <div style={{ marginBottom: '12px' }}>
+                                                    <label style={{ fontSize: '11px', color: 'var(--color-text-secondary)', display: 'block' }}>商品名 (編集可)</label>
+                                                    <input
+                                                        type="text"
+                                                        className="form-input"
+                                                        style={{ fontSize: '12px', padding: '4px 8px' }}
+                                                        value={regionTexts.TW.name || ''}
+                                                        onChange={(e) => handleChangeRegionText('TW', 'name', e.target.value)}
+                                                        placeholder="台湾用商品名..."
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ fontSize: '11px', color: 'var(--color-text-secondary)', display: 'block' }}>商品説明 (編集可)</label>
+                                                    <textarea
+                                                        className="form-input"
+                                                        style={{ fontSize: '12px', padding: '4px 8px', minHeight: '100px', resize: 'vertical' }}
+                                                        value={regionTexts.TW.description || ''}
+                                                        onChange={(e) => handleChangeRegionText('TW', 'description', e.target.value)}
+                                                        placeholder="台湾用商品説明..."
+                                                    />
+                                                </div>
                                             </div>
 
-                                            {/* マレーシア */}
+                                            {/* 3. マレーシア (英語) - 編集可能 */}
                                             <div style={{
                                                 background: 'var(--color-bg-glass)',
                                                 borderRadius: 'var(--radius-md)',
                                                 padding: 'var(--spacing-sm)',
                                                 border: listingTargets.MY ? '2px solid var(--color-accent)' : '1px solid var(--color-border)'
                                             }}>
-                                                <div style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '6px',
-                                                    marginBottom: '8px'
-                                                }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', borderBottom: '1px dashed var(--color-border)', paddingBottom: '4px' }}>
                                                     <input
                                                         type="checkbox"
                                                         checked={listingTargets.MY}
@@ -1162,34 +1180,29 @@ function NewProduct() {
                                                         style={{ width: '16px', height: '16px' }}
                                                     />
                                                     <span style={{ fontSize: '16px' }}>🇲🇾</span>
-                                                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>マレーシア（英語）</span>
+                                                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>マレーシア (英語)</span>
                                                 </div>
-                                                {regionTexts.MY.name && (
-                                                    <div style={{ marginBottom: '8px' }}>
-                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '2px' }}>Product Name:</div>
-                                                        <div style={{
-                                                            fontSize: 'var(--font-size-sm)',
-                                                            background: 'var(--color-bg-primary)',
-                                                            padding: '8px',
-                                                            borderRadius: 'var(--radius-sm)',
-                                                            border: '1px solid var(--color-border)'
-                                                        }}>{regionTexts.MY.name}</div>
-                                                    </div>
-                                                )}
-                                                {regionTexts.MY.description && (
-                                                    <div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '2px' }}>Description:</div>
-                                                        <div style={{
-                                                            fontSize: 'var(--font-size-xs)',
-                                                            background: 'var(--color-bg-primary)',
-                                                            padding: '8px',
-                                                            borderRadius: 'var(--radius-sm)',
-                                                            border: '1px solid var(--color-border)',
-                                                            maxHeight: '80px',
-                                                            overflow: 'auto'
-                                                        }}>{regionTexts.MY.description}</div>
-                                                    </div>
-                                                )}
+                                                <div style={{ marginBottom: '12px' }}>
+                                                    <label style={{ fontSize: '11px', color: 'var(--color-text-secondary)', display: 'block' }}>Product Name (Editable)</label>
+                                                    <input
+                                                        type="text"
+                                                        className="form-input"
+                                                        style={{ fontSize: '12px', padding: '4px 8px' }}
+                                                        value={regionTexts.MY.name || ''}
+                                                        onChange={(e) => handleChangeRegionText('MY', 'name', e.target.value)}
+                                                        placeholder="English Name..."
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ fontSize: '11px', color: 'var(--color-text-secondary)', display: 'block' }}>Description (Editable)</label>
+                                                    <textarea
+                                                        className="form-input"
+                                                        style={{ fontSize: '12px', padding: '4px 8px', minHeight: '100px', resize: 'vertical' }}
+                                                        value={regionTexts.MY.description || ''}
+                                                        onChange={(e) => handleChangeRegionText('MY', 'description', e.target.value)}
+                                                        placeholder="English Description..."
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
 
@@ -1205,10 +1218,10 @@ function NewProduct() {
                                             alignItems: 'center',
                                             gap: '8px'
                                         }}>
-                                            <span>📤 出品先:</span>
-                                            {listingTargets.TW && <span style={{ background: 'var(--color-primary)', color: 'white', padding: '2px 8px', borderRadius: '10px' }}>🇹🇼 台湾</span>}
-                                            {listingTargets.MY && <span style={{ background: 'var(--color-accent)', color: 'white', padding: '2px 8px', borderRadius: '10px' }}>🇲🇾 マレーシア</span>}
-                                            {!listingTargets.TW && !listingTargets.MY && <span style={{ color: 'var(--color-error)' }}>出品先を選択してください</span>}
+                                            <span>📤 出品ターゲット:</span>
+                                            {listingTargets.TW && <span style={{ background: '#e1f5fe', color: '#0288d1', padding: '2px 8px', borderRadius: '10px', border: '1px solid #b3e5fc' }}>🇹🇼 台湾</span>}
+                                            {listingTargets.MY && <span style={{ background: '#fff3e0', color: '#f57c00', padding: '2px 8px', borderRadius: '10px', border: '1px solid #ffe0b2' }}>🇲🇾 マレーシア</span>}
+                                            {!listingTargets.TW && !listingTargets.MY && <span style={{ color: 'var(--color-error)' }}>⚠ 出品先を選択してください</span>}
                                         </div>
                                     </div>
                                 )}

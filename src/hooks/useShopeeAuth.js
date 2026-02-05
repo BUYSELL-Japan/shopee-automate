@@ -166,15 +166,18 @@ export function useShopeeAuth() {
             const result = await response.json();
 
             if (result.status === 'success' && result.data?.access_token) {
-                setAuthState(prev => ({
-                    ...prev,
-                    accessToken: result.data.access_token,
-                    refreshToken: result.data.refresh_token || prev.refreshToken,
-                    isConnected: true,
-                    source: 'd1'
-                }));
+                // 現在のショップと同じなら状態更新
+                if (String(shopId) === String(authState.shopId)) {
+                    setAuthState(prev => ({
+                        ...prev,
+                        accessToken: result.data.access_token,
+                        refreshToken: result.data.refresh_token || prev.refreshToken,
+                        isConnected: true,
+                        source: 'd1'
+                    }));
+                }
                 console.log('Token refreshed successfully');
-                return { success: true };
+                return { success: true, data: result.data };
             }
             return { success: false, error: result.message };
         } catch (e) {
@@ -347,6 +350,7 @@ export function useShopeeAuth() {
         updateTokens,
         saveAuth,
         refreshToken: () => refreshTokenFromD1(authState.shopId),
+        refreshShopToken: refreshTokenFromD1,
         loadFromD1,
         exchangeFullAuth,
         loadShopByRegion, // リージョン別ショップ読み込み
