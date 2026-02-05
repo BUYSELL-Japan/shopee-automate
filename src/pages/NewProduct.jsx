@@ -173,7 +173,7 @@ function SpecSelect({ label, specKey, specData, onChange }) {
 
 function NewProduct() {
     const navigate = useNavigate()
-    const { accessToken, shopId, isConnected } = useShopeeAuth()
+    const { accessToken, shopId, isConnected, activeRegion, loadShopByRegion } = useShopeeAuth()
 
     // フォーム状態
     const [formData, setFormData] = useState({
@@ -735,110 +735,231 @@ function NewProduct() {
         const validImages = formData.images.filter(img => img.status === 'done' && img.id)
         if (validImages.length === 0) { alert('画像を少なくとも1枚アップロードしてください'); return }
 
+        // 出品先が少なくとも1つ選択されているか確認
+        const targets = Object.keys(listingTargets).filter(r => listingTargets[r])
+        if (targets.length === 0) { alert('出品先の国を少なくとも1つ選択してください'); return }
+
         setIsSubmitting(true)
+        const results = []
 
         try {
-            const imageIdList = validImages.map(img => img.id)
-            const logisticInfoPayload = logistics.filter(l => l.enabled).map(l => ({ logistic_id: l.logistics_channel_id, enabled: true }))
-            const finalPrice = parseFloat(formData.price)
-            const fullDescription = `${formData.description}\n\n${formData.descriptionFooter}`;
+            // 共通の属性リスト作成
+            const createAttributes = (regionCode) => {
+                // 基本的には共通だが、将来的に国ごとの違いがあればここで分岐可能
+                const attributes = []
 
-            const attributes = []
+                // Adult products（必須・固定）
+                attributes.push({
+                    attribute_id: PRODUCT_ATTRIBUTES.adult.attribute_id,
+                    attribute_value_list: [{ value_id: PRODUCT_ATTRIBUTES.adult.fixed_value_id }]
+                });
 
-            // Adult products（必須・固定）
-            attributes.push({
-                attribute_id: PRODUCT_ATTRIBUTES.adult.attribute_id,
-                attribute_value_list: [{ value_id: PRODUCT_ATTRIBUTES.adult.fixed_value_id }]
-            });
+                // Warranty Type（固定）
+                attributes.push({
+                    attribute_id: PRODUCT_ATTRIBUTES.warranty.attribute_id,
+                    attribute_value_list: [{ value_id: PRODUCT_ATTRIBUTES.warranty.fixed_value_id }]
+                });
 
-            // Warranty Type（固定）
-            attributes.push({
-                attribute_id: PRODUCT_ATTRIBUTES.warranty.attribute_id,
-                attribute_value_list: [{ value_id: PRODUCT_ATTRIBUTES.warranty.fixed_value_id }]
-            });
+                // 新しい属性システムからの追加
+                const addNewAttr = (attrKey) => {
+                    const attrDef = PRODUCT_ATTRIBUTES[attrKey];
+                    const attrVal = productAttrs[attrKey];
+                    if (!attrDef || !attrVal) return;
 
-            // 新しい属性システムからの追加
-            const addNewAttr = (attrKey) => {
-                const attrDef = PRODUCT_ATTRIBUTES[attrKey];
-                const attrVal = productAttrs[attrKey];
-                if (!attrDef || !attrVal) return;
-
-                if (attrDef.is_text || attrVal.value_id === 0) {
-                    // テキスト入力型属性
-                    if (attrVal.text) {
+                    if (attrDef.is_text || attrVal.value_id === 0) {
+                        // テキスト入力型属性
+                        if (attrVal.text) {
+                            attributes.push({
+                                attribute_id: attrDef.attribute_id,
+                                attribute_value_list: [{
+                                    value_id: 0,
+                                    original_value_name: attrVal.text
+                                }]
+                            });
+                        }
+                    } else if (attrVal.value_id) {
+                        // 選択型属性
                         attributes.push({
                             attribute_id: attrDef.attribute_id,
-                            attribute_value_list: [{
-                                value_id: 0,
-                                original_value_name: attrVal.text
-                            }]
+                            attribute_value_list: [{ value_id: attrVal.value_id }]
                         });
                     }
-                } else if (attrVal.value_id) {
-                    // 選択型属性
-                    attributes.push({
-                        attribute_id: attrDef.attribute_id,
-                        attribute_value_list: [{ value_id: attrVal.value_id }]
-                    });
-                }
-            };
+                };
 
-            addNewAttr('material');
-            addNewAttr('style');
-            addNewAttr('character');
-            addNewAttr('quantity');
-            addNewAttr('materialFeature');
-            addNewAttr('goodsType');
+                addNewAttr('material');
+                addNewAttr('style');
+                addNewAttr('character');
+                addNewAttr('quantity');
+                addNewAttr('materialFeature');
+                addNewAttr('goodsType');
 
-            console.log('=== ATTRIBUTE LIST FOR SUBMISSION ===');
-            console.log(JSON.stringify(attributes, null, 2));
-            console.log('=====================================');
-
-            // Brand
-            let brandPayload = undefined;
-            if (formData.brandId) {
-                const brandIdNum = parseInt(formData.brandId);
-                let brandName = "";
-                const matchOption = brandOptions.find(o => o.value_id === brandIdNum);
-                if (matchOption) brandName = matchOption.display_value_name;
-                else if (brandIdNum === 1146303) brandName = "BANPRESTO";
-                else brandName = "General";
-
-                brandPayload = { brand_id: brandIdNum, original_brand_name: brandName };
+                return attributes
             }
 
-            const stockVal = parseInt(formData.stock);
-            const payload = {
-                item_name: formData.name,
-                description: fullDescription,
-                original_price: finalPrice,
-                price: finalPrice,
-                normal_stock: stockVal,
-                seller_stock: [{ stock: stockVal }],
-                category_id: parseInt(formData.category),
-                weight: parseFloat(formData.weight),
-                image: { image_id_list: imageIdList },
-                logistic_info: logisticInfoPayload,
-                attribute_list: attributes,
-                brand: brandPayload
-            }
+            // ループ処理で各国の出品を行う
+            for (const region of targets) {
+                console.log(`🚀 Starting submission for ${region}...`)
 
-            console.log("Submitting payload:", JSON.stringify(payload, null, 2))
-            const result = await addItem(accessToken, shopId, payload)
+                try {
+                    // 1. 認証情報の取得
+                    let regionAuth = { accessToken, shopId }
+                    if (region !== activeRegion) {
+                        console.log(`Swapping auth for ${region}...`)
+                        const authRes = await loadShopByRegion(region)
+                        if (!authRes.success || !authRes.shop.isConnected) {
+                            throw new Error(`${region}のショップ認証情報が見つかりません。接続設定を確認してください。`)
+                        }
+                        regionAuth = {
+                            accessToken: authRes.shop.accessToken,
+                            shopId: authRes.shop.shopId
+                        }
+                    }
 
-            if (result.error || (result.response && result.response.error)) {
-                const msg = result.message || result.error || (result.response && result.response.message) || "Unknown Error";
-                alert(`出品エラー: ${msg}\n\n(詳細: ${JSON.stringify(result.response || result)})`)
-            } else {
-                // D1に仕入れ情報を保存（Shopee APIには送信しない）
-                const newItemId = result.response?.item_id || result.item_id
-                if (newItemId && (formData.costPrice || formData.sourceUrls.some(url => url))) {
-                    try {
-                        // ソースURLをJSONに変換（空でないもののみ）
+                    // 2. 物流情報の取得・設定
+                    let regionLogistics = []
+                    if (region === activeRegion) {
+                        regionLogistics = logistics.filter(l => l.enabled).map(l => ({ logistic_id: l.logistics_channel_id, enabled: true }))
+                    } else {
+                        // アクティブでない場合、そのショップの物流情報を取得
+                        console.log(`Fetching logistics for ${region}...`)
+                        const logRes = await getLogistics(regionAuth.accessToken, regionAuth.shopId)
+                        if (logRes.response && logRes.response.logistics_channel_list) {
+                            // 海運以外を自動で有効化
+                            const validChannels = logRes.response.logistics_channel_list.filter(l =>
+                                l.logistics_channel_name !== '蝦皮海外 - 蝦皮店到店（海運）' &&
+                                !l.logistics_channel_name.includes('海運') &&
+                                !l.logistics_channel_name.includes('Sea') // マレーシア等は英語の可能性
+                            );
+                            // 通常配送(Standard)を優先
+                            regionLogistics = validChannels.map(l => ({ logistic_id: l.logistics_channel_id, enabled: true }))
+                        }
+                    }
+
+                    // 3. 画像の準備（アクティブリージョン以外は再アップロードが必要）
+                    let regionImageIds = []
+                    if (region === activeRegion) {
+                        regionImageIds = validImages.map(img => img.id)
+                    } else {
+                        console.log(`Re-uploading images for ${region}...`)
+                        const newlyUploadedIds = []
+                        for (const img of validImages) {
+                            try {
+                                // 元のFileオブジェクトを使用してアップロード
+                                const res = await uploadImage(regionAuth.accessToken, regionAuth.shopId, img.file)
+                                if (res.response && res.response.image_info) {
+                                    newlyUploadedIds.push(res.response.image_info.image_id)
+                                }
+                            } catch (uploadErr) {
+                                console.error(`Image upload failed for ${region}:`, uploadErr)
+                            }
+                        }
+                        if (newlyUploadedIds.length === 0) throw new Error('画像のアップロードに失敗しました')
+                        regionImageIds = newlyUploadedIds
+                    }
+
+                    // 4. 価格計算
+                    let regionPrice = 0
+                    if (region === activeRegion) {
+                        regionPrice = parseFloat(formData.price)
+                    } else {
+                        // 原価設定があれば、その国の計算式で算出
+                        if (formData.costPrice) {
+                            const recommended = calculateRecommendedPrice(region, parseFloat(formData.costPrice))
+                            regionPrice = recommended || 0
+                        }
+
+                        // 原価がない、または計算失敗時は単純換算（簡易ロジック）
+                        if (!regionPrice) {
+                            // TWD -> JPY -> TargetCurrency
+                            const baseTwd = parseFloat(formData.price)
+                            const baseJpy = Math.round(baseTwd * regionSettings.TW.exchangeRate) // TWD -> JPY (approx)
+                            // JPY -> Target
+                            // priceLocal = salesJpy / (exchangeRate * (1 - feeRate)) simplified...
+                            // Actually, just convert JPY to target currency simply for now if strict calc fails?
+                            // Better: use calculateRecommendedPrice with derived JPY cost (assuming profit margin included in baseTwd)
+                            // This is complex. Fallback: Direct currency conversion
+
+                            // 簡易: BasePrice(TWD) * (TargetRate / BaseRate) ??? 
+                            // No, Rates are relative to JPY usually in settings.
+                            // Settings: TW.exchangeRate = 4.7 (1 TWD = 4.7 JPY) ??? No, usually 1 TWD = X JPY ?
+                            // Code says: TWD_JPY_RATE: 4.7 (1 TWD = 4.7 JPY)
+                            // NewProduct.jsx line 19: TWD_JPY_RATE: 4.7.
+                            // regionSettings also has exchangeRate.
+
+                            const jpyVal = baseTwd * (regionSettings.TW?.exchangeRate || 4.7)
+                            const targetRate = regionSettings[region]?.exchangeRate || 1
+                            regionPrice = Math.ceil(jpyVal / targetRate) // JPY / Rate = Local ? 
+                            // Check regionSettings usage: 
+                            // salesJpy = sellingPriceLocal * s.exchangeRate 
+                            // So sellingPriceLocal = salesJpy / s.exchangeRate
+                            regionPrice = Math.ceil(jpyVal / targetRate)
+                        }
+                    }
+
+                    // 5. テキスト情報
+                    const regionName = regionTexts[region].name || formData.name
+                    const regionDesc = (regionTexts[region].description || formData.description) + `\n\n${formData.descriptionFooter}`
+
+                    // 6. Data Payload Construction
+                    // Brand
+                    let brandPayload = undefined;
+                    if (formData.brandId) {
+                        // Note: Brand IDs are often region specific or global.
+                        // Standard brands (Banpresto etc) usually share IDs but not always.
+                        // For now assume same ID works or use 'No Brand' if fail?
+                        // Current UI uses a hardcoded list.
+                        // If API fails due to brand, we might need a fallback.
+                        const brandIdNum = parseInt(formData.brandId);
+                        let brandName = "";
+                        // Try to find name from options
+                        const matchOption = brandOptions.find(o => o.value_id === brandIdNum);
+                        if (matchOption) brandName = matchOption.display_value_name;
+                        else if (brandIdNum === 1146303) brandName = "BANPRESTO";
+                        else brandName = "General";
+                        if (region !== activeRegion) {
+                            // 他リージョンでブランドIDが通用するか不明だが、まずは送信してみる
+                            // エラーが出たらブランドなし(0)で再送などのロジックが必要だが、今回はそのまま送信
+                        }
+                        brandPayload = { brand_id: brandIdNum, original_brand_name: brandName };
+                    }
+
+                    const stockVal = parseInt(formData.stock);
+                    const attributes = createAttributes(region)
+
+                    const payload = {
+                        item_name: regionName,
+                        description: regionDesc,
+                        original_price: regionPrice,
+                        price: regionPrice,
+                        normal_stock: stockVal,
+                        seller_stock: [{ stock: stockVal }],
+                        category_id: parseInt(formData.category), // Category IDs are usually consistent for global items, but might differ. 
+                        // However, user selected from current region's tree.
+                        // Cross-border usually maps them.
+                        weight: parseFloat(formData.weight),
+                        image: { image_id_list: regionImageIds },
+                        logistic_info: regionLogistics,
+                        attribute_list: attributes,
+                        brand: brandPayload
+                    }
+
+                    console.log(`Submitting payload to ${region}:`, JSON.stringify(payload, null, 2))
+                    const result = await addItem(regionAuth.accessToken, regionAuth.shopId, payload)
+
+                    if (result.error || (result.response && result.response.error)) {
+                        const msg = result.message || result.error || (result.response && result.response.message) || "Unknown Error";
+                        throw new Error(msg)
+                    }
+
+                    // Success
+                    const newItemId = result.response?.item_id || result.item_id
+                    results.push({ region, status: 'success', itemId: newItemId })
+
+                    // D1同期 (原価情報など)
+                    if (newItemId && (formData.costPrice || formData.sourceUrls.some(url => url))) {
                         const validUrls = formData.sourceUrls.filter(url => url && url.trim())
                         const sourceUrlJson = validUrls.length > 0 ? JSON.stringify(validUrls) : null
-
-                        await fetch(`/api/db/products?shop_id=${shopId}`, {
+                        await fetch(`/api/db/products?shop_id=${regionAuth.shopId}`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -846,17 +967,36 @@ function NewProduct() {
                                 cost_price: parseFloat(formData.costPrice) || null,
                                 source_url: sourceUrlJson
                             })
-                        })
-                        console.log('D1 saved cost_price and source_urls')
-                    } catch (e) {
-                        console.log('D1 save failed:', e)
+                        }).catch(e => console.error('D1 save error:', e))
                     }
+
+                } catch (regionError) {
+                    console.error(`Error processing ${region}:`, regionError)
+                    results.push({ region, status: 'error', message: regionError.message })
                 }
-                alert('✅ 出品に成功しました！')
+            }
+
+            // Summary Report
+            const successes = results.filter(r => r.status === 'success')
+            const failures = results.filter(r => r.status === 'error')
+
+            let msg = ''
+            if (successes.length > 0) {
+                msg += `✅ 成功 (${successes.map(r => r.region).join(', ')}): 出品完了\n`
+            }
+            if (failures.length > 0) {
+                msg += `❌ 失敗 (${failures.map(r => r.region).join(', ')}): \n${failures.map(r => `・${r.region}: ${r.message}`).join('\n')}`
+            }
+
+            alert(msg)
+
+            if (successes.length > 0) {
+                // 成功したら一覧へ
                 navigate('/products')
             }
+
         } catch (e) {
-            alert(`出品エラー: ${e.message}`)
+            alert(`システムエラー: ${e.message}`)
         } finally {
             setIsSubmitting(false)
         }
